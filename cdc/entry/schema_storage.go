@@ -97,6 +97,33 @@ func (s *SingleSchemaSnapshot) PreTableInfo(job *timodel.Job) (*model.TableInfo,
 	}
 }
 
+func NewRawKVFakeSchemaSnapshot(currentTs uint64) *SingleSchemaSnapshot {
+	snap := newEmptySchemaSnapshot(false)
+
+	var schemaID int64 = 1
+	var tableID int64 = 100
+
+	dbinfo := timodel.DBInfo{
+		ID:   schemaID,
+		Name: timodel.CIStr{O: "_raw", L: "_raw"},
+	}
+	snap.schemas[schemaID] = &dbinfo
+	snap.schemaNameToID[dbinfo.Name.O] = dbinfo.ID
+
+	tableInfo := timodel.TableInfo{
+		ID:   tableID,
+		Name: timodel.CIStr{O: "_raw", L: "_raw"},
+	}
+	snap.tableInSchema[schemaID] = []int64{tableInfo.ID}
+	{
+		tableInfo := model.WrapTableInfo(dbinfo.ID, dbinfo.Name.O, currentTs, &tableInfo)
+		snap.tables[tableInfo.ID] = tableInfo
+		snap.tableNameToID[model.TableName{Schema: dbinfo.Name.O, Table: tableInfo.Name.O}] = tableInfo.ID
+	}
+	snap.currentTs = currentTs
+	return snap
+}
+
 // NewSingleSchemaSnapshotFromMeta creates a new single schema snapshot from a tidb meta
 func NewSingleSchemaSnapshotFromMeta(meta *timeta.Meta, currentTs uint64, explicitTables bool) (*SingleSchemaSnapshot, error) {
 	// meta is nil only in unit tests

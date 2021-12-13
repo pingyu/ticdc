@@ -166,7 +166,7 @@ var defaultServerConfig = &ServerConfig{
 	Addr:          "127.0.0.1:8300",
 	AdvertiseAddr: "",
 	LogFile:       "",
-	LogLevel:      "info",
+	LogLevel:      "debug",
 	Log: &LogConfig{
 		File: &LogFileConfig{
 			MaxSize:    300,

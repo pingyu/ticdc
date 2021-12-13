@@ -317,14 +317,15 @@ func (o *Owner) newChangeFeed(
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	meta, err := kv.GetSnapshotMeta(kvStore, checkpointTs)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	schemaSnap, err := entry.NewSingleSchemaSnapshotFromMeta(meta, checkpointTs, info.Config.ForceReplicate)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
+	// meta, err := kv.GetSnapshotMeta(kvStore, checkpointTs)
+	// if err != nil {
+	// 	return nil, errors.Trace(err)
+	// }
+	// schemaSnap, err := entry.NewSingleSchemaSnapshotFromMeta(meta, checkpointTs, info.Config.ForceReplicate)
+	// if err != nil {
+	// 	return nil, errors.Trace(err)
+	// }
+	schemaSnap := entry.NewRawKVFakeSchemaSnapshot(checkpointTs)
 
 	filter, err := filter.NewFilter(info.Config)
 	if err != nil {
