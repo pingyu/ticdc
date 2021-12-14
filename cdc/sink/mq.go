@@ -184,6 +184,12 @@ func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowCha
 	return nil
 }
 
+func (k *mqSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
+	// TODO(rawkv)
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
 func (k *mqSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
 	if resolvedTs <= k.checkpointTs {
 		return k.checkpointTs, nil
@@ -222,6 +228,12 @@ flushLoop:
 	k.checkpointTs = resolvedTs
 	k.statistics.PrintStatus(ctx)
 	return k.checkpointTs, nil
+}
+
+func (k *mqSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
+	// TODO(rawkv)
+	log.Panic("not implemented")
+	panic("not implemented")
 }
 
 func (k *mqSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {

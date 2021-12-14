@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/codec"
+	"github.com/twmb/murmur3"
 	"go.uber.org/zap"
 )
 
@@ -62,6 +63,13 @@ func (s ComparableSpan) Clone() ComparableSpan {
 	}
 }
 
+func (s ComparableSpan) Hash() uint64 {
+	hasher := murmur3.New64()
+	hasher.Write(s.Start)
+	hasher.Write(s.End)
+	return hasher.Sum64()
+}
+
 // Hack will set End as UpperBoundKey if End is Nil.
 func (s Span) Hack() Span {
 	s.Start, s.End = hackSpan(s.Start, s.End)
@@ -95,6 +103,13 @@ func GetTableSpan(tableID int64) Span {
 		Start: start,
 		End:   end,
 	}
+}
+
+func GetRawKVSpan() Span {
+	return Span{
+		Start: nil,
+		End:   nil,
+	}.Hack() // TODO(rawkv): no hack. Panic on IsSubSpan now.
 }
 
 // GetDDLSpan returns the span to watch for DDL related events

@@ -39,6 +39,9 @@ type Sink interface {
 	// EmitRowChangedEvents may write rows to downstream directly;
 	EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error
 
+	// EmitRawKVEvents: TODO(rawkv)
+	EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error
+
 	// EmitDDLEvent sends DDL Event to Sink
 	// EmitDDLEvent should execute DDL to downstream synchronously
 	EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error
@@ -46,6 +49,9 @@ type Sink interface {
 	// FlushRowChangedEvents flushes each row which of commitTs less than or equal to `resolvedTs` into downstream.
 	// TiCDC guarantees that all of Event which of commitTs less than or equal to `resolvedTs` are sent to Sink through `EmitRowChangedEvents`
 	FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error)
+
+	// FlushRawKVEvents: TODO(rawkv)
+	FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error)
 
 	// EmitCheckpointTs sends CheckpointTs to Sink
 	// TiCDC guarantees that all Events **in the cluster** which of commitTs less than or equal `checkpointTs` are sent to downstream successfully.

@@ -353,6 +353,16 @@ func (s *s3Sink) Barrier(ctx context.Context) error {
 	return nil
 }
 
+func (s *s3Sink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
+func (s *s3Sink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
 // NewS3Sink creates new sink support log data to s3 directly
 func NewS3Sink(ctx context.Context, sinkURI *url.URL, errCh chan error) (*s3Sink, error) {
 	if len(sinkURI.Host) == 0 {

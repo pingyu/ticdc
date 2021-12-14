@@ -51,6 +51,7 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/tikv/pd v1.1.0-beta.0.20210527030735-a544782ee076
 	github.com/tinylib/msgp v1.1.0
+	github.com/twmb/murmur3 v1.1.3
 	github.com/uber-go/atomic v1.4.0
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
 	go.etcd.io/bbolt v1.3.4 // indirect

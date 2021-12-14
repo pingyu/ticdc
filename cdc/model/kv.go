@@ -81,11 +81,12 @@ type RawKVEntry struct {
 
 	// Additonal debug info
 	RegionID uint64 `msg:"region_id"`
+	SpanHash uint64 `msg:"span_hash"`
 }
 
 func (v *RawKVEntry) String() string {
-	return fmt.Sprintf("OpType: %v, Key: %s, Value: %s, StartTs: %d, CRTs: %d, RegionID: %d",
-		v.OpType, string(v.Key), string(v.Value), v.StartTs, v.CRTs, v.RegionID)
+	return fmt.Sprintf("OpType: %v, Key: %s, Value: %s, StartTs: %d, CRTs: %d, RegionID: %d, SpanHash %d",
+		v.OpType, string(v.Key), string(v.Value), v.StartTs, v.CRTs, v.RegionID, v.SpanHash)
 }
 
 // ApproximateSize calculate the approximate size of this event

@@ -264,3 +264,13 @@ func (s *simpleMySQLSink) checkOldValue(ctx context.Context, row *model.RowChang
 	log.Debug("pass the old value check", zap.String("sql", sql), zap.Any("args", args), zap.Int("count", count))
 	return nil
 }
+
+func (t *simpleMySQLSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
+func (t *simpleMySQLSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
+	log.Panic("not implemented")
+	panic("not implemented")
+}

@@ -817,7 +817,8 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 
 	startPuller := func(tableID model.TableID, pResolvedTs *uint64, pCheckpointTs *uint64) sink.Sink {
 		// start table puller
-		span := regionspan.GetTableSpan(tableID)
+		span := regionspan.GetRawKVSpan()
+		// comparableSpan := regionspan.ToComparableSpan(span)
 		kvStorage, err := util.KVStorageFromCtx(ctx)
 		if err != nil {
 			p.sendError(err)
@@ -878,6 +879,11 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 			p.sorterConsume(ctx, tableID, sorter, pResolvedTs, pCheckpointTs, replicaInfo, tableSink)
 		}()
 		return tableSink
+		// kvSink := p.sinkManager.CreateKVSink(comparableSpan, replicaInfo.StartTs)
+		// go func() {
+		// 	p.sorterConsume(ctx, tableID, sorter, pResolvedTs, pCheckpointTs, replicaInfo, kvSink)
+		// }()
+		// return kvSink
 	}
 	var tableSink, mTableSink sink.Sink
 	if p.changefeed.Config.Cyclic.IsEnabled() && replicaInfo.MarkTableID != 0 {
@@ -1079,38 +1085,44 @@ func (p *oldProcessor) sorterConsume(
 
 	events := make([]*model.PolymorphicEvent, 0, defaultSyncResolvedBatch)
 	rows := make([]*model.RowChangedEvent, 0, defaultSyncResolvedBatch)
+	// rows := make([]*model.RawKVEntry, 0, defaultSyncResolvedBatch)
 
 	flushRowChangedEvents := func() error {
+		// TODO(rawkv): the buffer is not necessary.
 		for _, ev := range events {
-			err := ev.WaitPrepare(ctx)
-			if err != nil {
-				return errors.Trace(err)
-			}
+			// err := ev.WaitPrepare(ctx)
+			// if err != nil {
+			// 	return errors.Trace(err)
+			// }
 			if ev.Row == nil {
 				continue
 			}
-			colLen := len(ev.Row.Columns)
-			preColLen := len(ev.Row.PreColumns)
+			// colLen := len(ev.Row.Columns)
+			// preColLen := len(ev.Row.PreColumns)
 
-			// This indicates that it is an update event,
-			// and after enable old value internally by default(but disable in the configuration).
-			// We need to handle the update event to be compatible with the old format.
-			if !p.changefeed.Config.EnableOldValue && colLen != 0 && preColLen != 0 && colLen == preColLen {
-				if shouldSplitUpdateEventRow(ev.Row) {
-					deleteEventRow, insertEventRow, err := splitUpdateEventRow(ev.Row)
-					if err != nil {
-						return errors.Trace(err)
-					}
-					// NOTICE: Please do not change the order, the delete event always comes before the insert event.
-					rows = append(rows, deleteEventRow, insertEventRow)
-				} else {
-					// If the handle key columns are not updated, PreColumns is directly ignored.
-					ev.Row.PreColumns = nil
-					rows = append(rows, ev.Row)
-				}
-			} else {
-				rows = append(rows, ev.Row)
-			}
+			// // This indicates that it is an update event,
+			// // and after enable old value internally by default(but disable in the configuration).
+			// // We need to handle the update event to be compatible with the old format.
+			// if !p.changefeed.Config.EnableOldValue && colLen != 0 && preColLen != 0 && colLen == preColLen {
+			// 	if shouldSplitUpdateEventRow(ev.Row) {
+			// 		deleteEventRow, insertEventRow, err := splitUpdateEventRow(ev.Row)
+			// 		if err != nil {
+			// 			return errors.Trace(err)
+			// 		}
+			// 		// NOTICE: Please do not change the order, the delete event always comes before the insert event.
+			// 		rows = append(rows, deleteEventRow, insertEventRow)
+			// 	} else {
+			// 		// If the handle key columns are not updated, PreColumns is directly ignored.
+			// 		ev.Row.PreColumns = nil
+			// 		rows = append(rows, ev.Row)
+			// 	}
+			// } else {
+			rows = append(rows, ev.Row)
+			// }
+			// if ev.RawKV == nil || (ev.RawKV.OpType != model.OpTypePut && ev.RawKV.OpType != model.OpTypeDelete) {
+			// 	continue
+			// }
+			// rows = append(rows, ev.RawKV)
 		}
 		failpoint.Inject("ProcessorSyncResolvedPreEmit", func() {
 			log.Info("Prepare to panic for ProcessorSyncResolvedPreEmit")
@@ -1118,6 +1130,7 @@ func (p *oldProcessor) sorterConsume(
 			panic("ProcessorSyncResolvedPreEmit")
 		})
 		err := sink.EmitRowChangedEvents(ctx, rows...)
+		// err := sink.EmitRawKVEvents(ctx, rows...)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -1218,14 +1231,15 @@ func (p *oldProcessor) sorterConsume(
 				continue
 			}
 
-			pEvent.SetUpFinishedChan()
+			// pEvent.SetUpFinishedChan()
 			select {
 			case <-ctx.Done():
 				if errors.Cause(ctx.Err()) != context.Canceled {
 					p.sendError(ctx.Err())
 				}
 				return
-			case p.mounter.Input() <- pEvent:
+			default:
+				// case p.mounter.Input() <- pEvent:
 			}
 
 			if pEvent.RawKV != nil && pEvent.RawKV.OpType == model.OpTypeResolved {

@@ -139,18 +139,18 @@ func (es *EntrySorter) Run(ctx context.Context) error {
 					return lessFunc(toSort[i], toSort[j])
 				})
 				metricEntrySorterSortDuration.Observe(time.Since(startTime).Seconds())
-				// maxResolvedTs := resolvedTsGroup[len(resolvedTsGroup)-1]
+				maxResolvedTs := resolvedTsGroup[len(resolvedTsGroup)-1]
 
 				startTime = time.Now()
 				var merged []*model.PolymorphicEvent
 				mergeFunc(toSort, sorted, func(entry *model.PolymorphicEvent) {
-					log.Warn("cdc::puller::entry_sorter::Run::mergeFunc", zap.String("entry.RawKV", entry.RawKV.String()))
-					output(ctx, entry)
-					// if entry.CRTs <= maxResolvedTs {
-					// 	output(ctx, entry)
-					// } else {
-					// 	merged = append(merged, entry)
-					// }
+					if entry.CRTs <= maxResolvedTs {
+						log.Warn("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::output", zap.String("entry.RawKV", entry.RawKV.String()))
+						output(ctx, entry)
+					} else {
+						log.Warn("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::holding", zap.String("entry.RawKV", entry.RawKV.String()))
+						merged = append(merged, entry)
+					}
 				})
 				metricEntrySorterMergeDuration.Observe(time.Since(startTime).Seconds())
 				sorted = merged

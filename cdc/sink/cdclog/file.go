@@ -230,6 +230,16 @@ func (f *fileSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64)
 	return f.flushRowChangedEvents(ctx, resolvedTs)
 }
 
+func (f *fileSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
+func (f *fileSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
 func (f *fileSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {
 	log.Debug("[EmitCheckpointTs]", zap.Uint64("ts", ts))
 	f.logMeta.GlobalResolvedTS = ts

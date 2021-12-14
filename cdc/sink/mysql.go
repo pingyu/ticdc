@@ -287,6 +287,16 @@ func (s *mysqlSink) adjustSQLMode(ctx context.Context) error {
 	return nil
 }
 
+func (t *mysqlSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
+func (t *mysqlSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
+	log.Panic("not implemented")
+	panic("not implemented")
+}
+
 var _ Sink = &mysqlSink{}
 
 type sinkParams struct {

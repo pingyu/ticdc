@@ -1354,7 +1354,7 @@ func (s *eventFeedSession) singleEventFeed(
 	captureAddr := util.CaptureAddrFromCtx(ctx)
 	changefeedID := util.ChangefeedIDFromCtx(ctx)
 	metricReceivedEventSize := eventSize.WithLabelValues(captureAddr, "received")
-	// metricDroppedEventSize := eventSize.WithLabelValues(captureAddr, "dropped")
+	metricDroppedEventSize := eventSize.WithLabelValues(captureAddr, "dropped")
 	metricPullEventInitializedCounter := pullEventCounter.WithLabelValues(cdcpb.Event_INITIALIZED.String(), captureAddr, changefeedID)
 	metricPullEventCommittedCounter := pullEventCounter.WithLabelValues(cdcpb.Event_COMMITTED.String(), captureAddr, changefeedID)
 	metricPullEventCommitCounter := pullEventCounter.WithLabelValues(cdcpb.Event_COMMIT.String(), captureAddr, changefeedID)
@@ -1475,12 +1475,13 @@ func (s *eventFeedSession) singleEventFeed(
 					// and we only want the get [b, c) from this region,
 					// tikv will return all key events in the region although we specified [b, c) int the request.
 					// we can make tikv only return the events about the keys in the specified range.
-					// rawkv TODO: comparableKey := regionspan.ToComparableKey(entry.GetKey())
+					comparableKey := regionspan.ToComparableKey(entry.GetKey())
 					// key for initialized event is nil
-					// rawkv TODO: if !regionspan.KeyInSpan(comparableKey, span) && entry.Type != cdcpb.Event_INITIALIZED {
-					// 	metricDroppedEventSize.Observe(float64(entry.Size()))
-					// 	continue
-					// }
+					if !regionspan.KeyInSpan(comparableKey, span) && entry.Type != cdcpb.Event_INITIALIZED {
+						log.Warn("(rawkv)DroppedEvent not in span", zap.String("event", entry.String()))
+						metricDroppedEventSize.Observe(float64(entry.Size()))
+						continue
+					}
 					switch entry.Type {
 					case cdcpb.Event_INITIALIZED:
 						if time.Since(startFeedTime) > 20*time.Second {
