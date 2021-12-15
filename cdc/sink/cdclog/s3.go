@@ -210,7 +210,7 @@ type s3Sink struct {
 	ddlEncoder codec.EventBatchEncoder
 }
 
-func (s *s3Sink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (s *s3Sink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	return s.emitRowChangedEvents(ctx, newTableBuffer, rows...)
 }
 
@@ -351,16 +351,6 @@ func (s *s3Sink) Barrier(ctx context.Context) error {
 	// Barrier does nothing because FlushRowChangedEvents in s3 sink has flushed
 	// all buffered events forcedlly.
 	return nil
-}
-
-func (s *s3Sink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (s *s3Sink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 // NewS3Sink creates new sink support log data to s3 directly

@@ -289,7 +289,7 @@ func (n *sinkNode) emitRow2Sink(ctx pipeline.NodeContext) error {
 		time.Sleep(10 * time.Second)
 		panic("ProcessorSyncResolvedPreEmit")
 	})
-	err := n.sink.EmitRowChangedEvents(ctx, n.rowBuffer...)
+	err := n.sink.EmitRowChangedEvents(ctx, nil, n.rowBuffer...)
 	if err != nil {
 		return errors.Trace(err)
 	}

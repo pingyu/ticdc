@@ -162,7 +162,7 @@ func newMqSink(
 	return k, nil
 }
 
-func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (k *mqSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	rowsCount := 0
 	for _, row := range rows {
 		if k.filter.ShouldIgnoreDMLEvent(row.StartTs, row.Table.Schema, row.Table.Table) {
@@ -182,12 +182,6 @@ func (k *mqSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowCha
 	}
 	k.statistics.AddRowsCount(rowsCount)
 	return nil
-}
-
-func (k *mqSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	// TODO(rawkv)
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 func (k *mqSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
@@ -228,12 +222,6 @@ flushLoop:
 	k.checkpointTs = resolvedTs
 	k.statistics.PrintStatus(ctx)
 	return k.checkpointTs, nil
-}
-
-func (k *mqSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	// TODO(rawkv)
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 func (k *mqSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {

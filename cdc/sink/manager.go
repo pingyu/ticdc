@@ -38,7 +38,7 @@ type Manager struct {
 	backendSink  Sink
 	checkpointTs model.Ts
 	tableSinks   map[model.TableID]*tableSink
-	kvSinks      map[uint64]*kvSink
+	eventSinks   map[uint64]*tableSink
 	tableSinksMu sync.Mutex
 
 	flushMu sync.Mutex
@@ -53,7 +53,7 @@ func NewManager(ctx context.Context, backendSink Sink, errCh chan error, checkpo
 		backendSink:  newBufferSink(ctx, backendSink, errCh, checkpointTs, drawbackChan),
 		checkpointTs: checkpointTs,
 		tableSinks:   make(map[model.TableID]*tableSink),
-		kvSinks:      make(map[uint64]*kvSink),
+		eventSinks:   make(map[uint64]*tableSink),
 		drawbackChan: drawbackChan,
 	}
 }
@@ -69,30 +69,31 @@ func (m *Manager) CreateTableSink(tableID model.TableID, checkpointTs model.Ts) 
 		tableID:   tableID,
 		manager:   m,
 		buffer:    make([]*model.RowChangedEvent, 0, 128),
+		events:    make([]*model.PolymorphicEvent, 0, 128),
 		emittedTs: checkpointTs,
 	}
 	m.tableSinks[tableID] = sink
 	return sink
 }
 
-func (m *Manager) CreateKVSink(span regionspan.ComparableSpan, checkpointTs model.Ts) Sink {
-	log.Warn("(rawkv) Manager::CreateKVSink")
-	hash := span.Hash()
-	m.tableSinksMu.Lock()
-	defer m.tableSinksMu.Unlock()
-	if _, exist := m.kvSinks[hash]; exist {
-		// hash conflict is acceptable
-		log.Warn("the kv sink already exists", zap.String("span", span.String()), zap.Uint64("hash", hash))
-	}
-	sink := &kvSink{
-		span:      span,
-		manager:   m,
-		buffer:    make([]*model.RawKVEntry, 0, 128),
-		emittedTs: checkpointTs,
-	}
-	m.kvSinks[hash] = sink
-	return sink
-}
+// func (m *Manager) CreateKVSink(span regionspan.ComparableSpan, checkpointTs model.Ts) Sink {
+// 	log.Warn("(rawkv) Manager::CreateKVSink")
+// 	hash := span.Hash()
+// 	m.tableSinksMu.Lock()
+// 	defer m.tableSinksMu.Unlock()
+// 	if _, exist := m.kvSinks[hash]; exist {
+// 		// hash conflict is acceptable
+// 		log.Warn("the kv sink already exists", zap.String("span", span.String()), zap.Uint64("hash", hash))
+// 	}
+// 	sink := &tableSink{
+// 		span:      span,
+// 		manager:   m,
+// 		buffer:    make([]*model.RawKVEntry, 0, 128),
+// 		emittedTs: checkpointTs,
+// 	}
+// 	m.kvSinks[hash] = sink
+// 	return sink
+// }
 
 // Close closes the Sink manager and backend Sink, this method can be reentrantly called
 func (m *Manager) Close(ctx context.Context) error {
@@ -102,17 +103,17 @@ func (m *Manager) Close(ctx context.Context) error {
 func (m *Manager) getMinEmittedTs() model.Ts {
 	m.tableSinksMu.Lock()
 	defer m.tableSinksMu.Unlock()
-	minTs := model.Ts(math.MaxUint64)
-	// TODO(rawkv):
 	if len(m.tableSinks) == 0 {
 		return m.getCheckpointTs()
 	}
+	minTs := model.Ts(math.MaxUint64)
 	for _, tableSink := range m.tableSinks {
 		emittedTs := tableSink.getEmittedTs()
 		if minTs > emittedTs {
 			minTs = emittedTs
 		}
 	}
+	// TODO(rawkv): eventSinks
 	// if len(m.kvSinks) == 0 {
 	// 	return m.getCheckpointTs()
 	// }
@@ -125,7 +126,7 @@ func (m *Manager) getMinEmittedTs() model.Ts {
 	return minTs
 }
 
-func (m *Manager) flushBackendTableSink(ctx context.Context) (model.Ts, error) {
+func (m *Manager) flushBackendSink(ctx context.Context) (model.Ts, error) {
 	m.flushMu.Lock()
 	defer m.flushMu.Unlock()
 	minEmittedTs := m.getMinEmittedTs()
@@ -137,17 +138,17 @@ func (m *Manager) flushBackendTableSink(ctx context.Context) (model.Ts, error) {
 	return checkpointTs, nil
 }
 
-func (m *Manager) flushBackendKVSink(ctx context.Context) (model.Ts, error) {
-	m.flushMu.Lock()
-	defer m.flushMu.Unlock()
-	minEmittedTs := m.getMinEmittedTs()
-	checkpointTs, err := m.backendSink.FlushRawKVEvents(ctx, minEmittedTs)
-	if err != nil {
-		return m.getCheckpointTs(), errors.Trace(err)
-	}
-	atomic.StoreUint64(&m.checkpointTs, checkpointTs)
-	return checkpointTs, nil
-}
+// func (m *Manager) flushBackendKVSink(ctx context.Context) (model.Ts, error) {
+// 	m.flushMu.Lock()
+// 	defer m.flushMu.Unlock()
+// 	minEmittedTs := m.getMinEmittedTs()
+// 	checkpointTs, err := m.backendSink.FlushRawKVEvents(ctx, minEmittedTs)
+// 	if err != nil {
+// 		return m.getCheckpointTs(), errors.Trace(err)
+// 	}
+// 	atomic.StoreUint64(&m.checkpointTs, checkpointTs)
+// 	return checkpointTs, nil
+// }
 
 func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) error {
 	m.tableSinksMu.Lock()
@@ -157,7 +158,7 @@ func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) e
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case m.drawbackChan <- drawbackMsg{tableID: tableID, callback: callback, span: nil}:
+	case m.drawbackChan <- drawbackMsg{tableID: tableID, span: nil, callback: callback}:
 	}
 	select {
 	case <-ctx.Done():
@@ -167,24 +168,24 @@ func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) e
 	return m.backendSink.Barrier(ctx)
 }
 
-func (m *Manager) destroyKVSink(ctx context.Context, span regionspan.ComparableSpan) error {
-	hash := span.Hash()
-	m.tableSinksMu.Lock()
-	delete(m.kvSinks, hash)
-	m.tableSinksMu.Unlock()
-	callback := make(chan struct{})
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case m.drawbackChan <- drawbackMsg{tableID: -1, callback: callback, span: &span}:
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-callback:
-	}
-	return m.backendSink.Barrier(ctx)
-}
+// func (m *Manager) destroyKVSink(ctx context.Context, span regionspan.ComparableSpan) error {
+// 	hash := span.Hash()
+// 	m.tableSinksMu.Lock()
+// 	delete(m.kvSinks, hash)
+// 	m.tableSinksMu.Unlock()
+// 	callback := make(chan struct{})
+// 	select {
+// 	case <-ctx.Done():
+// 		return ctx.Err()
+// 	case m.drawbackChan <- drawbackMsg{tableID: -1, callback: callback, span: &span}:
+// 	}
+// 	select {
+// 	case <-ctx.Done():
+// 		return ctx.Err()
+// 	case <-callback:
+// 	}
+// 	return m.backendSink.Barrier(ctx)
+// }
 
 func (m *Manager) getCheckpointTs() uint64 {
 	return atomic.LoadUint64(&m.checkpointTs)
@@ -196,6 +197,9 @@ type tableSink struct {
 	buffer  []*model.RowChangedEvent
 	// emittedTs means all of events which of commitTs less than or equal to emittedTs is sent to backendSink
 	emittedTs model.Ts
+
+	span   regionspan.ComparableSpan
+	events []*model.PolymorphicEvent
 }
 
 func (t *tableSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTableInfo) error {
@@ -203,19 +207,11 @@ func (t *tableSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTab
 	return nil
 }
 
-func (t *tableSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (t *tableSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
+	log.Warn("(rawkv)tableSink::EmitRowChangedEvents", zap.Any("events", events), zap.Any("rows", rows))
 	t.buffer = append(t.buffer, rows...)
+	t.events = append(t.events, events...)
 	return nil
-}
-
-func (t *tableSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (t *tableSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 func (t *tableSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
@@ -224,22 +220,28 @@ func (t *tableSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error
 }
 
 func (t *tableSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	i := sort.Search(len(t.buffer), func(i int) bool {
-		return t.buffer[i].CommitTs > resolvedTs
+	log.Warn("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs))
+	i := sort.Search(len(t.events), func(i int) bool {
+		return t.events[i].CRTs > resolvedTs
 	})
 	if i == 0 {
 		atomic.StoreUint64(&t.emittedTs, resolvedTs)
-		return t.manager.flushBackendTableSink(ctx)
+		return t.manager.flushBackendSink(ctx)
 	}
 	resolvedRows := t.buffer[:i]
 	t.buffer = append(make([]*model.RowChangedEvent, 0, len(t.buffer[i:])), t.buffer[i:]...)
 
-	err := t.manager.backendSink.EmitRowChangedEvents(ctx, resolvedRows...)
+	resolvedEvents := t.events[:i]
+	t.events = append(make([]*model.PolymorphicEvent, 0, len(t.events[i:])), t.events[i:]...)
+
+	log.Warn("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs), zap.Any("resolvedRows", resolvedRows), zap.Any("resolvedEvents", resolvedEvents))
+
+	err := t.manager.backendSink.EmitRowChangedEvents(ctx, resolvedEvents, resolvedRows...)
 	if err != nil {
 		return t.manager.getCheckpointTs(), errors.Trace(err)
 	}
 	atomic.StoreUint64(&t.emittedTs, resolvedTs)
-	return t.manager.flushBackendTableSink(ctx)
+	return t.manager.flushBackendSink(ctx)
 }
 
 func (t *tableSink) getEmittedTs() uint64 {
@@ -261,85 +263,6 @@ func (t *tableSink) Barrier(ctx context.Context) error {
 	return nil
 }
 
-type kvSink struct {
-	span    regionspan.ComparableSpan
-	manager *Manager
-	buffer  []*model.RawKVEntry
-	// emittedTs means all of events which of commitTs less than or equal to emittedTs is sent to backendSink
-	emittedTs model.Ts
-}
-
-func (t *kvSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTableInfo) error {
-	// do nothing
-	return nil
-}
-
-func (t *kvSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (t *kvSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Warn("(rawkv) kvSink::EmitRawKVEvents", zap.Any("kvs", kvs))
-	t.buffer = append(t.buffer, kvs...)
-	return nil
-}
-
-func (t *kvSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error {
-	// the table sink doesn't receive the DDL event
-	return nil
-}
-
-func (t *kvSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (t *kvSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Warn("(rawkv) kvSink::FluashRawKVEvents", zap.Uint64("resolvedTs", resolvedTs))
-	i := sort.Search(len(t.buffer), func(i int) bool {
-		return t.buffer[i].CRTs > resolvedTs
-	})
-	if i == 0 {
-		atomic.StoreUint64(&t.emittedTs, resolvedTs)
-		return t.manager.flushBackendKVSink(ctx)
-	}
-	resolvedRows := t.buffer[:i]
-	t.buffer = append(make([]*model.RawKVEntry, 0, len(t.buffer[i:])), t.buffer[i:]...)
-
-	// TODO(rawkv) do earlier
-	hash := t.span.Hash()
-	for _, kv := range resolvedRows {
-		kv.SpanHash = hash
-	}
-
-	err := t.manager.backendSink.EmitRawKVEvents(ctx, resolvedRows...)
-	if err != nil {
-		return t.manager.getCheckpointTs(), errors.Trace(err)
-	}
-	atomic.StoreUint64(&t.emittedTs, resolvedTs)
-	return t.manager.flushBackendKVSink(ctx)
-}
-
-func (t *kvSink) getEmittedTs() uint64 {
-	return atomic.LoadUint64(&t.emittedTs)
-}
-
-func (t *kvSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {
-	// the table sink doesn't receive the checkpoint event
-	return nil
-}
-
-// Note once the Close is called, no more events can be written to this table sink
-func (t *kvSink) Close(ctx context.Context) error {
-	return t.manager.destroyKVSink(ctx, t.span)
-}
-
-// Barrier is not used in table sink
-func (t *kvSink) Barrier(ctx context.Context) error {
-	return nil
-}
-
 type drawbackMsg struct {
 	tableID  model.TableID
 	span     *regionspan.ComparableSpan
@@ -349,8 +272,8 @@ type drawbackMsg struct {
 type bufferSink struct {
 	Sink
 	checkpointTs uint64
-	rowBuffer    map[model.TableID][]*model.RowChangedEvent
-	kvBuffer     map[uint64][]*model.RawKVEntry
+	buffer       map[model.TableID][]*model.RowChangedEvent
+	eventBuffer  map[model.TableID][]*model.PolymorphicEvent
 	bufferMu     sync.Mutex
 	flushTsChan  chan uint64
 	drawbackChan chan drawbackMsg
@@ -366,8 +289,8 @@ func newBufferSink(
 	sink := &bufferSink{
 		Sink: backendSink,
 		// buffer shares the same flow control with table sink
-		rowBuffer:    make(map[model.TableID][]*model.RowChangedEvent),
-		kvBuffer:     make(map[uint64][]*model.RawKVEntry),
+		buffer:       make(map[model.TableID][]*model.RowChangedEvent),
+		eventBuffer:  make(map[model.TableID][]*model.PolymorphicEvent),
 		checkpointTs: checkpointTs,
 		flushTsChan:  make(chan uint64, 128),
 		drawbackChan: drawbackChan,
@@ -393,23 +316,25 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 		case drawback := <-b.drawbackChan:
 			b.bufferMu.Lock()
 			if drawback.tableID >= 0 {
-				delete(b.rowBuffer, drawback.tableID)
+				delete(b.buffer, drawback.tableID)
+				delete(b.eventBuffer, drawback.tableID)
 			}
-			if drawback.span != nil {
-				delete(b.kvBuffer, drawback.span.Hash())
-			}
+			// if drawback.span != nil {
+			// 	delete(b.kvBuffer, drawback.span.Hash())
+			// }
 			b.bufferMu.Unlock()
 			close(drawback.callback)
 		case resolvedTs := <-b.flushTsChan:
 			b.bufferMu.Lock()
 			// find all rows before resolvedTs and emit to backend sink
-			for tableID, rows := range b.rowBuffer {
+			for tableID, rows := range b.buffer {
 				i := sort.Search(len(rows), func(i int) bool {
 					return rows[i].CommitTs > resolvedTs
 				})
 
 				start := time.Now()
-				err := b.Sink.EmitRowChangedEvents(ctx, rows[:i]...)
+				events := b.eventBuffer[tableID][:i]
+				err := b.Sink.EmitRowChangedEvents(ctx, events, rows[:i]...)
 				if err != nil {
 					b.bufferMu.Unlock()
 					if errors.Cause(err) != context.Canceled {
@@ -422,32 +347,8 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 
 				// put remaining rows back to buffer
 				// append to a new, fixed slice to avoid lazy GC
-				b.rowBuffer[tableID] = append(make([]*model.RowChangedEvent, 0, len(rows[i:])), rows[i:]...)
-			}
-			b.bufferMu.Unlock()
-
-			b.bufferMu.Lock()
-			// find all rows before resolvedTs and emit to backend sink
-			for hash, kvs := range b.kvBuffer {
-				i := sort.Search(len(kvs), func(i int) bool {
-					return kvs[i].CRTs > resolvedTs
-				})
-
-				start := time.Now()
-				err := b.Sink.EmitRawKVEvents(ctx, kvs[:i]...)
-				if err != nil {
-					b.bufferMu.Unlock()
-					if errors.Cause(err) != context.Canceled {
-						errCh <- err
-					}
-					return
-				}
-				dur := time.Since(start)
-				metricEmitRowDuration.Observe(dur.Seconds())
-
-				// put remaining rows back to buffer
-				// append to a new, fixed slice to avoid lazy GC
-				b.kvBuffer[hash] = append(make([]*model.RawKVEntry, 0, len(kvs[i:])), kvs[i:]...)
+				b.buffer[tableID] = append(make([]*model.RowChangedEvent, 0, len(rows[i:])), rows[i:]...)
+				b.eventBuffer[tableID] = append(make([]*model.PolymorphicEvent, 0, len(events[i:])), events[i:]...)
 			}
 			b.bufferMu.Unlock()
 
@@ -468,12 +369,12 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 					zap.Duration("duration", dur), util.ZapFieldChangefeed(ctx))
 			}
 		case <-time.After(defaultMetricInterval):
-			metricBufferSize.Set(float64(len(b.rowBuffer) + len(b.kvBuffer)))
+			metricBufferSize.Set(float64(len(b.buffer) + len(b.eventBuffer))) // TODO(rawkv): double length here.
 		}
 	}
 }
 
-func (b *bufferSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (b *bufferSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -483,38 +384,14 @@ func (b *bufferSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.Ro
 		}
 		tableID := rows[0].Table.TableID
 		b.bufferMu.Lock()
-		b.rowBuffer[tableID] = append(b.rowBuffer[tableID], rows...)
-		b.bufferMu.Unlock()
-	}
-	return nil
-}
-
-func (b *bufferSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		if len(kvs) == 0 {
-			return nil
-		}
-		hash := kvs[0].SpanHash
-		b.bufferMu.Lock()
-		b.kvBuffer[hash] = append(b.kvBuffer[hash], kvs...)
+		b.buffer[tableID] = append(b.buffer[tableID], rows...)
+		b.eventBuffer[tableID] = append(b.eventBuffer[tableID], events...)
 		b.bufferMu.Unlock()
 	}
 	return nil
 }
 
 func (b *bufferSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	select {
-	case <-ctx.Done():
-		return atomic.LoadUint64(&b.checkpointTs), ctx.Err()
-	case b.flushTsChan <- resolvedTs:
-	}
-	return atomic.LoadUint64(&b.checkpointTs), nil
-}
-
-func (b *bufferSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
 	select {
 	case <-ctx.Done():
 		return atomic.LoadUint64(&b.checkpointTs), ctx.Err()

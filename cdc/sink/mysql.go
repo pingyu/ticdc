@@ -111,7 +111,7 @@ type mysqlSink struct {
 	forceReplicate bool
 }
 
-func (s *mysqlSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (s *mysqlSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	count := s.txnCache.Append(s.filter, rows...)
 	s.statistics.AddRowsCount(count)
 	return nil
@@ -285,16 +285,6 @@ func (s *mysqlSink) adjustSQLMode(ctx context.Context) error {
 		return cerror.WrapError(cerror.ErrMySQLQueryError, err)
 	}
 	return nil
-}
-
-func (t *mysqlSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (t *mysqlSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 var _ Sink = &mysqlSink{}

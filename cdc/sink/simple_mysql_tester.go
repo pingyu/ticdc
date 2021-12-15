@@ -111,7 +111,7 @@ func (s *simpleMySQLSink) Initialize(ctx context.Context, tableInfo []*model.Sim
 
 // EmitRowChangedEvents sends Row Changed Event to Sink
 // EmitRowChangedEvents may write rows to downstream directly;
-func (s *simpleMySQLSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (s *simpleMySQLSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	s.rowsBufferLock.Lock()
 	defer s.rowsBufferLock.Unlock()
 	s.rowsBuffer = append(s.rowsBuffer, rows...)
@@ -263,14 +263,4 @@ func (s *simpleMySQLSink) checkOldValue(ctx context.Context, row *model.RowChang
 	}
 	log.Debug("pass the old value check", zap.String("sql", sql), zap.Any("args", args), zap.Int("count", count))
 	return nil
-}
-
-func (t *simpleMySQLSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (t *simpleMySQLSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
 }

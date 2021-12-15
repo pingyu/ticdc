@@ -1085,7 +1085,7 @@ func (p *oldProcessor) sorterConsume(
 
 	events := make([]*model.PolymorphicEvent, 0, defaultSyncResolvedBatch)
 	rows := make([]*model.RowChangedEvent, 0, defaultSyncResolvedBatch)
-	// rows := make([]*model.RawKVEntry, 0, defaultSyncResolvedBatch)
+	emitEvents := make([]*model.PolymorphicEvent, 0, defaultSyncResolvedBatch)
 
 	flushRowChangedEvents := func() error {
 		// TODO(rawkv): the buffer is not necessary.
@@ -1094,7 +1094,10 @@ func (p *oldProcessor) sorterConsume(
 			// if err != nil {
 			// 	return errors.Trace(err)
 			// }
-			if ev.Row == nil {
+			// if ev.Row == nil {
+			// 	continue
+			// }
+			if ev.RawKV == nil || (ev.RawKV.OpType != model.OpTypePut && ev.RawKV.OpType != model.OpTypeDelete) {
 				continue
 			}
 			// colLen := len(ev.Row.Columns)
@@ -1117,25 +1120,26 @@ func (p *oldProcessor) sorterConsume(
 			// 		rows = append(rows, ev.Row)
 			// 	}
 			// } else {
+			// 	rows = append(rows, ev.Row)
+			// }
+			ev.Row = &model.RowChangedEvent{
+				Table: &model.TableName{TableID: 100},
+			}
 			rows = append(rows, ev.Row)
-			// }
-			// if ev.RawKV == nil || (ev.RawKV.OpType != model.OpTypePut && ev.RawKV.OpType != model.OpTypeDelete) {
-			// 	continue
-			// }
-			// rows = append(rows, ev.RawKV)
+			emitEvents = append(emitEvents, ev)
 		}
 		failpoint.Inject("ProcessorSyncResolvedPreEmit", func() {
 			log.Info("Prepare to panic for ProcessorSyncResolvedPreEmit")
 			time.Sleep(10 * time.Second)
 			panic("ProcessorSyncResolvedPreEmit")
 		})
-		err := sink.EmitRowChangedEvents(ctx, rows...)
-		// err := sink.EmitRawKVEvents(ctx, rows...)
+		err := sink.EmitRowChangedEvents(ctx, emitEvents, rows...)
 		if err != nil {
 			return errors.Trace(err)
 		}
 		events = events[:0]
 		rows = rows[:0]
+		emitEvents = emitEvents[:0]
 		return nil
 	}
 

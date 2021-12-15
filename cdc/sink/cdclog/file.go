@@ -221,23 +221,13 @@ func (f *fileSink) createDDLFile(commitTs uint64) (*os.File, error) {
 	return file, nil
 }
 
-func (f *fileSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (f *fileSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	return f.emitRowChangedEvents(ctx, newTableStream, rows...)
 }
 
 func (f *fileSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
 	log.Debug("[FlushRowChangedEvents] enter", zap.Uint64("ts", resolvedTs))
 	return f.flushRowChangedEvents(ctx, resolvedTs)
-}
-
-func (f *fileSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	log.Panic("not implemented")
-	panic("not implemented")
-}
-
-func (f *fileSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Panic("not implemented")
-	panic("not implemented")
 }
 
 func (f *fileSink) EmitCheckpointTs(ctx context.Context, ts uint64) error {

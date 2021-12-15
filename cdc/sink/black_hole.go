@@ -36,9 +36,14 @@ type blackHoleSink struct {
 	lastAccumulated uint64
 }
 
-func (b *blackHoleSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (b *blackHoleSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	for _, row := range rows {
 		log.Debug("BlockHoleSink: EmitRowChangedEvents", zap.Any("row", row))
+	}
+	for _, ev := range events {
+		if ev.RawKV != nil {
+			log.Debug("BlockHoleSink: EmitRawKVEvents", zap.Any("kv", ev.RawKV))
+		}
 	}
 	rowsCount := len(rows)
 	atomic.AddUint64(&b.accumulated, uint64(rowsCount))
@@ -46,32 +51,8 @@ func (b *blackHoleSink) EmitRowChangedEvents(ctx context.Context, rows ...*model
 	return nil
 }
 
-func (b *blackHoleSink) EmitRawKVEvents(ctx context.Context, kvs ...*model.RawKVEntry) error {
-	for _, kv := range kvs {
-		log.Debug("BlockHoleSink: EmitRawKVEvents", zap.Any("kv", kv))
-	}
-	rowsCount := len(kvs)
-	atomic.AddUint64(&b.accumulated, uint64(rowsCount))
-	b.statistics.AddRowsCount(rowsCount)
-	return nil
-}
-
 func (b *blackHoleSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
 	log.Debug("BlockHoleSink: FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs))
-	err := b.statistics.RecordBatchExecution(func() (int, error) {
-		// TODO: add some random replication latency
-		accumulated := atomic.LoadUint64(&b.accumulated)
-		batchSize := accumulated - b.lastAccumulated
-		b.lastAccumulated = accumulated
-		return int(batchSize), nil
-	})
-	b.statistics.PrintStatus(ctx)
-	atomic.StoreUint64(&b.checkpointTs, resolvedTs)
-	return resolvedTs, err
-}
-
-func (b *blackHoleSink) FlushRawKVEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Debug("BlockHoleSink: FlushRawKVEvents", zap.Uint64("resolvedTs", resolvedTs))
 	err := b.statistics.RecordBatchExecution(func() (int, error) {
 		// TODO: add some random replication latency
 		accumulated := atomic.LoadUint64(&b.accumulated)
