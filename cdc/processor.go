@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -766,19 +765,24 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 	p.stateMu.Lock()
 	defer p.stateMu.Unlock()
 
-	var tableName string
+	span := regionspan.Span{
+		Start: replicaInfo.SpanStart,
+		End:   replicaInfo.SpanEnd,
+	}.Hack() // TODO(rawkv): should not hack here.
+	tableName := span.String()
+	log.Warn("(rawkv)oldProcessor::addTable", zap.Int64("tableID", tableID), zap.String("tableName", tableName), zap.Any("replicaInfo", replicaInfo))
 
-	err := retry.Do(ctx, func() error {
-		if name, ok := p.schemaStorage.GetLastSnapshot().GetTableNameByID(tableID); ok {
-			tableName = name.QuoteString()
-			return nil
-		}
-		return errors.Errorf("failed to get table name, fallback to use table id: %d", tableID)
-	}, retry.WithBackoffBaseDelay(5), retry.WithMaxTries(maxTries), retry.WithIsRetryableErr(cerror.IsRetryableError))
-	if err != nil {
-		log.Warn("get table name for metric", util.ZapFieldChangefeed(ctx), zap.String("error", err.Error()))
-		tableName = strconv.Itoa(int(tableID))
-	}
+	// err := retry.Do(ctx, func() error {
+	// 	if name, ok := p.schemaStorage.GetLastSnapshot().GetTableNameByID(tableID); ok {
+	// 		tableName = name.QuoteString()
+	// 		return nil
+	// 	}
+	// 	return errors.Errorf("failed to get table name, fallback to use table id: %d", tableID)
+	// }, retry.WithBackoffBaseDelay(5), retry.WithMaxTries(maxTries), retry.WithIsRetryableErr(cerror.IsRetryableError))
+	// if err != nil {
+	// 	log.Warn("get table name for metric", util.ZapFieldChangefeed(ctx), zap.String("error", err.Error()))
+	// 	tableName = strconv.Itoa(int(tableID))
+	// }
 
 	if _, ok := p.tables[tableID]; ok {
 		log.Warn("Ignore existing table", util.ZapFieldChangefeed(ctx), zap.Int64("ID", tableID))
@@ -817,7 +821,7 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 
 	startPuller := func(tableID model.TableID, pResolvedTs *uint64, pCheckpointTs *uint64) sink.Sink {
 		// start table puller
-		span := regionspan.GetRawKVSpan()
+		// span := regionspan.GetRawKVSpan()
 		// comparableSpan := regionspan.ToComparableSpan(span)
 		kvStorage, err := util.KVStorageFromCtx(ctx)
 		if err != nil {
@@ -879,11 +883,6 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 			p.sorterConsume(ctx, tableID, sorter, pResolvedTs, pCheckpointTs, replicaInfo, tableSink)
 		}()
 		return tableSink
-		// kvSink := p.sinkManager.CreateKVSink(comparableSpan, replicaInfo.StartTs)
-		// go func() {
-		// 	p.sorterConsume(ctx, tableID, sorter, pResolvedTs, pCheckpointTs, replicaInfo, kvSink)
-		// }()
-		// return kvSink
 	}
 	var tableSink, mTableSink sink.Sink
 	if p.changefeed.Config.Cyclic.IsEnabled() && replicaInfo.MarkTableID != 0 {
@@ -1043,6 +1042,10 @@ func (p *oldProcessor) sorterConsume(
 	replicaInfo *model.TableReplicaInfo,
 	sink sink.Sink,
 ) {
+	rowTableInfo := &model.RowChangedEvent{
+		Table: &model.TableName{TableID: tableID},
+	}
+
 	var lastResolvedTs uint64
 	opDone := false
 	resolvedGauge := tableResolvedTsGauge.WithLabelValues(p.changefeedID, p.captureInfo.AdvertiseAddr)
@@ -1122,9 +1125,7 @@ func (p *oldProcessor) sorterConsume(
 			// } else {
 			// 	rows = append(rows, ev.Row)
 			// }
-			ev.Row = &model.RowChangedEvent{
-				Table: &model.TableName{TableID: 100},
-			}
+			ev.Row = rowTableInfo // TODO(rawkv): delete this
 			rows = append(rows, ev.Row)
 			emitEvents = append(emitEvents, ev)
 		}

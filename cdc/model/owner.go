@@ -202,6 +202,12 @@ func (w *TaskWorkload) Marshal() (string, error) {
 type TableReplicaInfo struct {
 	StartTs     Ts      `json:"start-ts"`
 	MarkTableID TableID `json:"mark-table-id"`
+
+	SpanStart []byte `json:"span-start"`
+	SpanEnd   []byte `json:"span-end"`
+	// SpanSeed to avoid span hash conflict
+	//   SpanHash = murmur3.New64(StartKey + SpanSeed + EndKey)
+	SpanSeed uint8 `json:"span-seed"`
 }
 
 // Clone clones a TableReplicaInfo

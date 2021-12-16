@@ -24,7 +24,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
 	"github.com/pingcap/ticdc/cdc/model"
-	"github.com/pingcap/ticdc/pkg/regionspan"
 	"github.com/pingcap/ticdc/pkg/util"
 	"go.uber.org/zap"
 )
@@ -38,7 +37,6 @@ type Manager struct {
 	backendSink  Sink
 	checkpointTs model.Ts
 	tableSinks   map[model.TableID]*tableSink
-	eventSinks   map[uint64]*tableSink
 	tableSinksMu sync.Mutex
 
 	flushMu sync.Mutex
@@ -53,7 +51,6 @@ func NewManager(ctx context.Context, backendSink Sink, errCh chan error, checkpo
 		backendSink:  newBufferSink(ctx, backendSink, errCh, checkpointTs, drawbackChan),
 		checkpointTs: checkpointTs,
 		tableSinks:   make(map[model.TableID]*tableSink),
-		eventSinks:   make(map[uint64]*tableSink),
 		drawbackChan: drawbackChan,
 	}
 }
@@ -76,25 +73,6 @@ func (m *Manager) CreateTableSink(tableID model.TableID, checkpointTs model.Ts) 
 	return sink
 }
 
-// func (m *Manager) CreateKVSink(span regionspan.ComparableSpan, checkpointTs model.Ts) Sink {
-// 	log.Warn("(rawkv) Manager::CreateKVSink")
-// 	hash := span.Hash()
-// 	m.tableSinksMu.Lock()
-// 	defer m.tableSinksMu.Unlock()
-// 	if _, exist := m.kvSinks[hash]; exist {
-// 		// hash conflict is acceptable
-// 		log.Warn("the kv sink already exists", zap.String("span", span.String()), zap.Uint64("hash", hash))
-// 	}
-// 	sink := &tableSink{
-// 		span:      span,
-// 		manager:   m,
-// 		buffer:    make([]*model.RawKVEntry, 0, 128),
-// 		emittedTs: checkpointTs,
-// 	}
-// 	m.kvSinks[hash] = sink
-// 	return sink
-// }
-
 // Close closes the Sink manager and backend Sink, this method can be reentrantly called
 func (m *Manager) Close(ctx context.Context) error {
 	return m.backendSink.Close(ctx)
@@ -113,16 +91,6 @@ func (m *Manager) getMinEmittedTs() model.Ts {
 			minTs = emittedTs
 		}
 	}
-	// TODO(rawkv): eventSinks
-	// if len(m.kvSinks) == 0 {
-	// 	return m.getCheckpointTs()
-	// }
-	// for _, kvSink := range m.kvSinks {
-	// 	emittedTs := kvSink.getEmittedTs()
-	// 	if minTs > emittedTs {
-	// 		minTs = emittedTs
-	// 	}
-	// }
 	return minTs
 }
 
@@ -138,18 +106,6 @@ func (m *Manager) flushBackendSink(ctx context.Context) (model.Ts, error) {
 	return checkpointTs, nil
 }
 
-// func (m *Manager) flushBackendKVSink(ctx context.Context) (model.Ts, error) {
-// 	m.flushMu.Lock()
-// 	defer m.flushMu.Unlock()
-// 	minEmittedTs := m.getMinEmittedTs()
-// 	checkpointTs, err := m.backendSink.FlushRawKVEvents(ctx, minEmittedTs)
-// 	if err != nil {
-// 		return m.getCheckpointTs(), errors.Trace(err)
-// 	}
-// 	atomic.StoreUint64(&m.checkpointTs, checkpointTs)
-// 	return checkpointTs, nil
-// }
-
 func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) error {
 	m.tableSinksMu.Lock()
 	delete(m.tableSinks, tableID)
@@ -158,7 +114,7 @@ func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) e
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case m.drawbackChan <- drawbackMsg{tableID: tableID, span: nil, callback: callback}:
+	case m.drawbackChan <- drawbackMsg{tableID: tableID, callback: callback}:
 	}
 	select {
 	case <-ctx.Done():
@@ -167,25 +123,6 @@ func (m *Manager) destroyTableSink(ctx context.Context, tableID model.TableID) e
 	}
 	return m.backendSink.Barrier(ctx)
 }
-
-// func (m *Manager) destroyKVSink(ctx context.Context, span regionspan.ComparableSpan) error {
-// 	hash := span.Hash()
-// 	m.tableSinksMu.Lock()
-// 	delete(m.kvSinks, hash)
-// 	m.tableSinksMu.Unlock()
-// 	callback := make(chan struct{})
-// 	select {
-// 	case <-ctx.Done():
-// 		return ctx.Err()
-// 	case m.drawbackChan <- drawbackMsg{tableID: -1, callback: callback, span: &span}:
-// 	}
-// 	select {
-// 	case <-ctx.Done():
-// 		return ctx.Err()
-// 	case <-callback:
-// 	}
-// 	return m.backendSink.Barrier(ctx)
-// }
 
 func (m *Manager) getCheckpointTs() uint64 {
 	return atomic.LoadUint64(&m.checkpointTs)
@@ -198,7 +135,6 @@ type tableSink struct {
 	// emittedTs means all of events which of commitTs less than or equal to emittedTs is sent to backendSink
 	emittedTs model.Ts
 
-	span   regionspan.ComparableSpan
 	events []*model.PolymorphicEvent
 }
 
@@ -265,7 +201,6 @@ func (t *tableSink) Barrier(ctx context.Context) error {
 
 type drawbackMsg struct {
 	tableID  model.TableID
-	span     *regionspan.ComparableSpan
 	callback chan struct{}
 }
 
@@ -315,26 +250,22 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 			return
 		case drawback := <-b.drawbackChan:
 			b.bufferMu.Lock()
-			if drawback.tableID >= 0 {
-				delete(b.buffer, drawback.tableID)
-				delete(b.eventBuffer, drawback.tableID)
-			}
-			// if drawback.span != nil {
-			// 	delete(b.kvBuffer, drawback.span.Hash())
-			// }
+			delete(b.buffer, drawback.tableID)
+			delete(b.eventBuffer, drawback.tableID)
 			b.bufferMu.Unlock()
 			close(drawback.callback)
 		case resolvedTs := <-b.flushTsChan:
 			b.bufferMu.Lock()
 			// find all rows before resolvedTs and emit to backend sink
-			for tableID, rows := range b.buffer {
-				i := sort.Search(len(rows), func(i int) bool {
-					return rows[i].CommitTs > resolvedTs
+			for tableID, events := range b.eventBuffer {
+				i := sort.Search(len(events), func(i int) bool {
+					return events[i].CRTs > resolvedTs
 				})
 
 				start := time.Now()
-				events := b.eventBuffer[tableID][:i]
-				err := b.Sink.EmitRowChangedEvents(ctx, events, rows[:i]...)
+				log.Warn("(rawkv)bufferSink::flush", zap.Uint64("resolvedTs", resolvedTs), zap.Any("events", events[:i]))
+				rows := b.buffer[tableID][:i]
+				err := b.Sink.EmitRowChangedEvents(ctx, events[:i], rows...)
 				if err != nil {
 					b.bufferMu.Unlock()
 					if errors.Cause(err) != context.Canceled {
@@ -369,7 +300,7 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 					zap.Duration("duration", dur), util.ZapFieldChangefeed(ctx))
 			}
 		case <-time.After(defaultMetricInterval):
-			metricBufferSize.Set(float64(len(b.buffer) + len(b.eventBuffer))) // TODO(rawkv): double length here.
+			metricBufferSize.Set(float64(len(b.eventBuffer)))
 		}
 	}
 }
@@ -379,10 +310,10 @@ func (b *bufferSink) EmitRowChangedEvents(ctx context.Context, events []*model.P
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		if len(rows) == 0 {
+		if len(events) == 0 {
 			return nil
 		}
-		tableID := rows[0].Table.TableID
+		tableID := events[0].Row.Table.TableID // TODO(rawkv): improve here
 		b.bufferMu.Lock()
 		b.buffer[tableID] = append(b.buffer[tableID], rows...)
 		b.eventBuffer[tableID] = append(b.eventBuffer[tableID], events...)

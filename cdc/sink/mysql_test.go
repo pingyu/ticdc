@@ -1172,7 +1172,7 @@ func (s MySQLSinkSuite) TestNewMySQLSinkExecDML(c *check.C) {
 		},
 	}
 
-	err = sink.EmitRowChangedEvents(ctx, rows...)
+	err = sink.EmitRowChangedEvents(ctx, nil, rows...)
 	c.Assert(err, check.IsNil)
 
 	err = retry.Do(context.Background(), func() error {

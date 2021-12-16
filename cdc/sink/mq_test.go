@@ -81,7 +81,7 @@ func (s mqSinkSuite) TestKafkaSink(c *check.C) {
 		CommitTs: 120,
 		Columns:  []*model.Column{{Name: "col1", Type: 1, Value: "aa"}},
 	}
-	err = sink.EmitRowChangedEvents(ctx, row)
+	err = sink.EmitRowChangedEvents(ctx, nil, row)
 	c.Assert(err, check.IsNil)
 	checkpointTs, err := sink.FlushRowChangedEvents(ctx, uint64(120))
 	c.Assert(err, check.IsNil)
@@ -111,7 +111,7 @@ func (s mqSinkSuite) TestKafkaSink(c *check.C) {
 	c.Assert(err, check.IsNil)
 
 	cancel()
-	err = sink.EmitRowChangedEvents(ctx, row)
+	err = sink.EmitRowChangedEvents(ctx, nil, row)
 	if err != nil {
 		c.Assert(errors.Cause(err), check.Equals, context.Canceled)
 	}
@@ -170,7 +170,7 @@ func (s mqSinkSuite) TestKafkaSinkFilter(c *check.C) {
 		StartTs:  100,
 		CommitTs: 120,
 	}
-	err = sink.EmitRowChangedEvents(ctx, row)
+	err = sink.EmitRowChangedEvents(ctx, nil, row)
 	c.Assert(err, check.IsNil)
 	c.Assert(sink.statistics.TotalRowsCount(), check.Equals, uint64(0))
 

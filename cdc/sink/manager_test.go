@@ -43,7 +43,7 @@ func (c *checkSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTab
 	panic("unreachable")
 }
 
-func (c *checkSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (c *checkSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	c.rowsMu.Lock()
 	defer c.rowsMu.Unlock()
 	c.rows = append(c.rows, rows...)
@@ -121,7 +121,7 @@ func (s *managerSuite) TestManagerRandom(c *check.C) {
 					c.Assert(err, check.IsNil)
 					lastResolvedTs = resolvedTs
 				} else {
-					err := tableSink.EmitRowChangedEvents(ctx, &model.RowChangedEvent{
+					err := tableSink.EmitRowChangedEvents(ctx, nil, &model.RowChangedEvent{
 						Table:    &model.TableName{TableID: int64(i)},
 						CommitTs: uint64(j),
 					})
@@ -173,7 +173,7 @@ func (s *managerSuite) TestManagerAddRemoveTable(c *check.C) {
 				continue
 			}
 			for i := lastResolvedTs + 1; i <= resolvedTs; i++ {
-				err := sink.EmitRowChangedEvents(ctx, &model.RowChangedEvent{
+				err := sink.EmitRowChangedEvents(ctx, nil, &model.RowChangedEvent{
 					Table:    &model.TableName{TableID: index},
 					CommitTs: i,
 				})
@@ -236,7 +236,7 @@ func (s *managerSuite) TestManagerDestroyTableSink(c *check.C) {
 
 	tableID := int64(49)
 	tableSink := manager.CreateTableSink(tableID, 100)
-	err := tableSink.EmitRowChangedEvents(ctx, &model.RowChangedEvent{
+	err := tableSink.EmitRowChangedEvents(ctx, nil, &model.RowChangedEvent{
 		Table:    &model.TableName{TableID: tableID},
 		CommitTs: uint64(110),
 	})
@@ -255,7 +255,7 @@ func (e *errorSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTab
 	panic("unreachable")
 }
 
-func (e *errorSink) EmitRowChangedEvents(ctx context.Context, rows ...*model.RowChangedEvent) error {
+func (e *errorSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
 	return errors.New("error in emit row changed events")
 }
 
@@ -287,7 +287,7 @@ func (s *managerSuite) TestManagerError(c *check.C) {
 	manager := NewManager(ctx, &errorSink{C: c}, errCh, 0)
 	defer manager.Close(ctx)
 	sink := manager.CreateTableSink(1, 0)
-	err := sink.EmitRowChangedEvents(ctx, &model.RowChangedEvent{
+	err := sink.EmitRowChangedEvents(ctx, nil, &model.RowChangedEvent{
 		CommitTs: 1,
 		Table:    &model.TableName{TableID: 1},
 	})

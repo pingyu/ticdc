@@ -107,6 +107,7 @@ var (
 	ErrCanalDecodeFailed         = errors.Normalize("canal decode failed", errors.RFCCodeText("CDC:ErrCanalDecodeFailed"))
 	ErrCanalEncodeFailed         = errors.Normalize("canal encode failed", errors.RFCCodeText("CDC:ErrCanalEncodeFailed"))
 	ErrOldValueNotEnabled        = errors.Normalize("old value is not enabled", errors.RFCCodeText("CDC:ErrOldValueNotEnabled"))
+	ErrTiKVInvalidConfig         = errors.Normalize("TiKV config invalid", errors.RFCCodeText("CDC:ErrTiKVInvalidConfig"))
 
 	// utilities related errors
 	ErrToTLSConfigFailed         = errors.Normalize("generate tls config failed", errors.RFCCodeText("CDC:ErrToTLSConfigFailed"))
