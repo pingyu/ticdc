@@ -754,11 +754,12 @@ func createSchemaStorage(
 	filter *filter.Filter,
 	forceReplicate bool,
 ) (entry.SchemaStorage, error) {
-	meta, err := kv.GetSnapshotMeta(kvStorage, checkpointTs)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	return entry.NewSchemaStorage(meta, checkpointTs, filter, forceReplicate)
+	// meta, err := kv.GetSnapshotMeta(kvStorage, checkpointTs)
+	// if err != nil {
+	// 	return nil, errors.Trace(err)
+	// }
+	// return entry.NewSchemaStorage(meta, checkpointTs, filter, forceReplicate)
+	return entry.NewRawKVFakeSchemaStorage(checkpointTs, filter, forceReplicate)
 }
 
 func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo *model.TableReplicaInfo) {

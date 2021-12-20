@@ -719,6 +719,17 @@ func NewSchemaStorage(meta *timeta.Meta, startTs uint64, filter *filter.Filter, 
 	return schema, nil
 }
 
+func NewRawKVFakeSchemaStorage(startTs uint64, filter *filter.Filter, forceReplicate bool) (SchemaStorage, error) {
+	snap := NewRawKVFakeSchemaSnapshot(startTs)
+	schema := &schemaStorageImpl{
+		snaps:          []*schemaSnapshot{snap},
+		resolvedTs:     startTs,
+		filter:         filter,
+		explicitTables: forceReplicate,
+	}
+	return schema, nil
+}
+
 func (s *schemaStorageImpl) getSnapshot(ts uint64) (*schemaSnapshot, error) {
 	gcTs := atomic.LoadUint64(&s.gcTs)
 	if ts < gcTs {

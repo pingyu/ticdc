@@ -1478,7 +1478,7 @@ func (s *eventFeedSession) singleEventFeed(
 					comparableKey := regionspan.ToComparableKey(entry.GetKey())
 					// key for initialized event is nil
 					if !regionspan.KeyInSpan(comparableKey, span) && entry.Type != cdcpb.Event_INITIALIZED {
-						log.Warn("(rawkv)DroppedEvent not in span", zap.String("event", entry.String()))
+						// log.Debug("(rawkv)DroppedEvent not in span", zap.String("event", entry.String()))
 						metricDroppedEventSize.Observe(float64(entry.Size()))
 						continue
 					}
