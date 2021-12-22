@@ -263,9 +263,9 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 				})
 
 				start := time.Now()
-				log.Warn("(rawkv)bufferSink::flush", zap.Uint64("resolvedTs", resolvedTs), zap.Any("events", events[:i]))
-				rows := b.buffer[tableID][:i]
-				err := b.Sink.EmitRowChangedEvents(ctx, events[:i], rows...)
+				log.Warn("(rawkv)bufferSink::flush", zap.Uint64("resolvedTs", resolvedTs), zap.Any("events", events[:i]), zap.Int("index", i))
+				rows := b.buffer[tableID]
+				err := b.Sink.EmitRowChangedEvents(ctx, events[:i], rows[:i]...)
 				if err != nil {
 					b.bufferMu.Unlock()
 					if errors.Cause(err) != context.Canceled {
