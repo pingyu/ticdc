@@ -685,7 +685,7 @@ func (s *eventFeedSession) requestRegionToStore(
 		if s.enableOldValue {
 			extraOp = kvrpcpb.ExtraOp_ReadOldValue
 		}
-		extraOp = 2
+		extraOp = 2 // TODO(rawkv) set by command line argument
 
 		rpcCtx := sri.rpcCtx
 		regionID := rpcCtx.Meta.GetId()
@@ -1484,6 +1484,9 @@ func (s *eventFeedSession) singleEventFeed(
 					}
 					switch entry.Type {
 					case cdcpb.Event_INITIALIZED:
+						log.Info("(rawkv)Initializing finished",
+							zap.Duration("timeCost", time.Since(startFeedTime)),
+							zap.Uint64("regionID", regionID))
 						if time.Since(startFeedTime) > 20*time.Second {
 							log.Warn("The time cost of initializing is too much",
 								zap.Duration("timeCost", time.Since(startFeedTime)),

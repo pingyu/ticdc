@@ -754,6 +754,7 @@ func createSchemaStorage(
 	filter *filter.Filter,
 	forceReplicate bool,
 ) (entry.SchemaStorage, error) {
+	// TODO(rawkv)
 	// meta, err := kv.GetSnapshotMeta(kvStorage, checkpointTs)
 	// if err != nil {
 	// 	return nil, errors.Trace(err)
@@ -771,8 +772,9 @@ func (p *oldProcessor) addTable(ctx context.Context, tableID int64, replicaInfo 
 		End:   replicaInfo.SpanEnd,
 	}.Hack() // TODO(rawkv): should not hack here.
 	tableName := span.String()
-	log.Warn("(rawkv)oldProcessor::addTable", zap.Int64("tableID", tableID), zap.String("tableName", tableName), zap.Any("replicaInfo", replicaInfo))
+	log.Info("(rawkv)oldProcessor::addTable", zap.Int64("tableID", tableID), zap.String("tableName", tableName), zap.Any("replicaInfo", replicaInfo))
 
+	// TODO(rawkv)
 	// err := retry.Do(ctx, func() error {
 	// 	if name, ok := p.schemaStorage.GetLastSnapshot().GetTableNameByID(tableID); ok {
 	// 		tableName = name.QuoteString()

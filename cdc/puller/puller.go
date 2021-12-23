@@ -113,7 +113,7 @@ func (p *pullerImpl) Run(ctx context.Context) error {
 	checkpointTs := p.checkpointTs
 	eventCh := make(chan model.RegionFeedEvent, defaultPullerEventChanSize)
 
-	lockresolver := txnutil.NewLockerResolver(p.kvStorage)
+	lockresolver := txnutil.NewLockerResolver(p.kvStorage, p.pdCli)
 	for _, span := range p.spans {
 		span := span
 

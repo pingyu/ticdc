@@ -144,7 +144,7 @@ func (t *tableSink) Initialize(ctx context.Context, tableInfo []*model.SimpleTab
 }
 
 func (t *tableSink) EmitRowChangedEvents(ctx context.Context, events []*model.PolymorphicEvent, rows ...*model.RowChangedEvent) error {
-	log.Warn("(rawkv)tableSink::EmitRowChangedEvents", zap.Any("events", events), zap.Any("rows", rows))
+	log.Debug("(rawkv)tableSink::EmitRowChangedEvents", zap.Any("events", events), zap.Any("rows", rows))
 	t.buffer = append(t.buffer, rows...)
 	t.events = append(t.events, events...)
 	return nil
@@ -156,7 +156,7 @@ func (t *tableSink) EmitDDLEvent(ctx context.Context, ddl *model.DDLEvent) error
 }
 
 func (t *tableSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64) (uint64, error) {
-	log.Warn("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs))
+	log.Debug("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs))
 	i := sort.Search(len(t.events), func(i int) bool {
 		return t.events[i].CRTs > resolvedTs
 	})
@@ -170,7 +170,7 @@ func (t *tableSink) FlushRowChangedEvents(ctx context.Context, resolvedTs uint64
 	resolvedEvents := t.events[:i]
 	t.events = append(make([]*model.PolymorphicEvent, 0, len(t.events[i:])), t.events[i:]...)
 
-	log.Warn("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs), zap.Any("resolvedRows", resolvedRows), zap.Any("resolvedEvents", resolvedEvents))
+	log.Debug("(rawkv)tableSink::FlushRowChangedEvents", zap.Uint64("resolvedTs", resolvedTs), zap.Any("resolvedRows", resolvedRows), zap.Any("resolvedEvents", resolvedEvents))
 
 	err := t.manager.backendSink.EmitRowChangedEvents(ctx, resolvedEvents, resolvedRows...)
 	if err != nil {
@@ -263,7 +263,7 @@ func (b *bufferSink) run(ctx context.Context, errCh chan error) {
 				})
 
 				start := time.Now()
-				log.Warn("(rawkv)bufferSink::flush", zap.Uint64("resolvedTs", resolvedTs), zap.Any("events", events[:i]), zap.Int("index", i))
+				log.Debug("(rawkv)bufferSink::flush", zap.Uint64("resolvedTs", resolvedTs), zap.Any("events", events[:i]), zap.Int("index", i))
 				rows := b.buffer[tableID]
 				err := b.Sink.EmitRowChangedEvents(ctx, events[:i], rows[:i]...)
 				if err != nil {

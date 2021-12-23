@@ -22,6 +22,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/store/tikv"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
+	pd "github.com/tikv/pd/client"
 	"go.uber.org/zap"
 )
 
@@ -31,13 +32,17 @@ type LockResolver interface {
 }
 
 type resolver struct {
-	kvStorage tikv.Storage
+	kvStorage   tikv.Storage
+	pdCli       pd.Client
+	regionCache *tikv.RegionCache
 }
 
 // NewLockerResolver returns a LockResolver.
-func NewLockerResolver(kvStorage tikv.Storage) LockResolver {
+func NewLockerResolver(kvStorage tikv.Storage, pdCli pd.Client) LockResolver {
 	return &resolver{
-		kvStorage: kvStorage,
+		kvStorage:   kvStorage,
+		pdCli:       pdCli,
+		regionCache: tikv.NewRegionCache(pdCli),
 	}
 }
 
@@ -56,7 +61,10 @@ func (r *resolver) Resolve(ctx context.Context, regionID uint64, maxVersion uint
 	var key []byte
 	flushRegion := func() error {
 		var err error
-		loc, err = r.kvStorage.GetRegionCache().LocateRegionByID(bo, regionID)
+		// (rawkv)`kvStorage.GetRegionCache().LocateRegionByID` using `tikv.CodecPDClient` will fail on rawkv data.
+		// loc, err = r.kvStorage.GetRegionCache().LocateRegionByID(bo, regionID)
+		loc, err = r.regionCache.LocateRegionByID(bo, regionID)
+		log.Info("(rawkv)lock_resolver::Resolve::regionCache.LocateRegionByID", zap.Any("KeyLocation", loc), zap.Error(err))
 		if err != nil {
 			return err
 		}

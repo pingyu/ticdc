@@ -902,7 +902,7 @@ func (c *changeFeed) calcResolvedTs() error {
 			return errors.Trace(err)
 		}
 
-		// rawkv: c.ddlResolvedTs == 0 bacause no ddl records
+		// (rawkv) c.ddlResolvedTs == 0 bacause no ddl records
 		if c.ddlResolvedTs > 0 && minResolvedTs > c.ddlResolvedTs {
 			minResolvedTs = c.ddlResolvedTs
 		}

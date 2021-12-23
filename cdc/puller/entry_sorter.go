@@ -145,10 +145,10 @@ func (es *EntrySorter) Run(ctx context.Context) error {
 				var merged []*model.PolymorphicEvent
 				mergeFunc(toSort, sorted, func(entry *model.PolymorphicEvent) {
 					if entry.CRTs <= maxResolvedTs {
-						log.Warn("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::output", zap.String("entry.RawKV", entry.RawKV.String()))
+						log.Debug("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::output", zap.String("entry.RawKV", entry.RawKV.String()))
 						output(ctx, entry)
 					} else {
-						log.Warn("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::holding", zap.String("entry.RawKV", entry.RawKV.String()))
+						log.Debug("(rawkv) cdc::puller::entry_sorter::Run::mergeFunc::holding", zap.String("entry.RawKV", entry.RawKV.String()))
 						merged = append(merged, entry)
 					}
 				})

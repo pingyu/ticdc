@@ -155,7 +155,7 @@ func TestSplit(t require.TestingT, pdCli pd.Client, storage tikv.Storage, kvStor
 
 	startTS := mustGetTimestamp(t, storage)
 
-	lockresolver := txnutil.NewLockerResolver(storage)
+	lockresolver := txnutil.NewLockerResolver(storage, pdCli)
 	isPullInit := &mockPullerInit{}
 	go func() {
 		err := cli.EventFeed(ctx, regionspan.ComparableSpan{Start: nil, End: nil}, startTS, false, lockresolver, isPullInit, eventCh)
@@ -244,7 +244,7 @@ func TestGetKVSimple(t require.TestingT, pdCli pd.Client, storage tikv.Storage, 
 	defer cli.Close()
 
 	startTS := mustGetTimestamp(t, storage)
-	lockresolver := txnutil.NewLockerResolver(storage)
+	lockresolver := txnutil.NewLockerResolver(storage, pdCli)
 	isPullInit := &mockPullerInit{}
 	go func() {
 		err := cli.EventFeed(ctx, regionspan.ComparableSpan{Start: nil, End: nil}, startTS, false, lockresolver, isPullInit, checker.eventCh)

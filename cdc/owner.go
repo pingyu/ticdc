@@ -317,6 +317,7 @@ func (o *Owner) newChangeFeed(
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	// TODO(rawkv)
 	// meta, err := kv.GetSnapshotMeta(kvStore, checkpointTs)
 	// if err != nil {
 	// 	return nil, errors.Trace(err)
