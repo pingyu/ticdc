@@ -247,3 +247,7 @@ func ToComparableSpan(span Span) ComparableSpan {
 func ToComparableKey(key []byte) []byte {
 	return codec.EncodeBytes(nil, key)
 }
+
+func ToComparableKeyFromRaw(key []byte) []byte {
+	return append(make([]byte, 0, len(key)), key...)
+}

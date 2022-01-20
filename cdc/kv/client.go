@@ -1031,7 +1031,7 @@ func (s *eventFeedSession) divideAndSendEventFeedToRegions(
 				log.Warn("ScanRegions", zap.Stringer("span", nextSpan), zap.Reflect("regions", metas), zap.Error(err))
 				return err
 			}
-			log.Debug("ScanRegions", zap.Stringer("span", nextSpan), zap.Reflect("regions", metas))
+			log.Info("ScanRegions", zap.Stringer("span", nextSpan), zap.Reflect("regions", metas))
 			return nil
 		}, retry.WithBackoffMaxDelay(50), retry.WithMaxTries(100), retry.WithIsRetryableErr(cerror.IsRetryableError))
 		if retryErr != nil {
@@ -1044,13 +1044,13 @@ func (s *eventFeedSession) divideAndSendEventFeedToRegions(
 			if err != nil {
 				return errors.Trace(err)
 			}
-			log.Debug("get partialSpan", zap.Stringer("span", partialSpan), zap.Uint64("regionID", region.Id))
+			log.Info("get partialSpan", zap.Stringer("span", partialSpan), zap.Uint64("regionID", region.Id))
 
 			nextSpan.Start = region.EndKey
 
 			sri := newSingleRegionInfo(tiRegion.VerID(), partialSpan, ts, nil)
 			s.scheduleRegionRequest(ctx, sri)
-			log.Debug("partialSpan scheduled", zap.Stringer("span", partialSpan), zap.Uint64("regionID", region.Id))
+			log.Info("partialSpan scheduled", zap.Stringer("span", partialSpan), zap.Uint64("regionID", region.Id))
 
 			// return if no more regions
 			if regionspan.EndCompare(nextSpan.Start, span.End) >= 0 {
@@ -1475,7 +1475,10 @@ func (s *eventFeedSession) singleEventFeed(
 					// and we only want the get [b, c) from this region,
 					// tikv will return all key events in the region although we specified [b, c) int the request.
 					// we can make tikv only return the events about the keys in the specified range.
-					comparableKey := regionspan.ToComparableKey(entry.GetKey())
+					// (rawkv)rawkv use original key to compare
+					// TODO(rawkv): get a better solution
+					// comparableKey := regionspan.ToComparableKey(entry.GetKey())
+					comparableKey := regionspan.ToComparableKeyFromRaw(entry.GetKey())
 					// key for initialized event is nil
 					if !regionspan.KeyInSpan(comparableKey, span) && entry.Type != cdcpb.Event_INITIALIZED {
 						// log.Debug("(rawkv)DroppedEvent not in span", zap.String("event", entry.String()))
