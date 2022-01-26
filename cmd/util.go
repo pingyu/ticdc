@@ -238,24 +238,26 @@ func verifyTargetTs(startTs, targetTs uint64) error {
 }
 
 func verifyTables(credential *security.Credential, cfg *config.ReplicaConfig, startTs uint64) (ineligibleTables, eligibleTables []model.TableName, err error) {
-	kvStore, err := kv.CreateTiStore(cliPdAddr, credential)
-	if err != nil {
-		return nil, nil, err
-	}
-	meta, err := kv.GetSnapshotMeta(kvStore, startTs)
-	if err != nil {
-		return nil, nil, errors.Trace(err)
-	}
+	// TODO(rawkv)
+	// kvStore, err := kv.CreateTiStore(cliPdAddr, credential)
+	// if err != nil {
+	// 	return nil, nil, err
+	// }
+	// meta, err := kv.GetSnapshotMeta(kvStore, startTs)
+	// if err != nil {
+	// 	return nil, nil, errors.Trace(err)
+	// }
 
 	filter, err := filter.NewFilter(cfg)
 	if err != nil {
 		return nil, nil, errors.Trace(err)
 	}
 
-	snap, err := entry.NewSingleSchemaSnapshotFromMeta(meta, startTs, false /* explicitTables */)
-	if err != nil {
-		return nil, nil, errors.Trace(err)
-	}
+	// snap, err := entry.NewSingleSchemaSnapshotFromMeta(meta, startTs, false /* explicitTables */)
+	// if err != nil {
+	// 	return nil, nil, errors.Trace(err)
+	// }
+	snap := entry.NewRawKVFakeSchemaSnapshot(startTs)
 
 	for tID, tableName := range snap.CloneTables() {
 		tableInfo, exist := snap.TableByID(tID)
