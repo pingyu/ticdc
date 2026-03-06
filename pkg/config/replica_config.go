@@ -45,6 +45,7 @@ var defaultReplicaConfig = &ReplicaConfig{
 	MemoryQuota:        util.AddressOf(uint64(DefaultChangefeedMemoryQuota)),
 	CaseSensitive:      util.AddressOf(false),
 	CheckGCSafePoint:   util.AddressOf(true),
+	EnableRedoIOCheck:  util.AddressOf(true),
 	EnableSyncPoint:    util.AddressOf(false),
 	EnableTableMonitor: util.AddressOf(false),
 	SyncPointInterval:  util.AddressOf(10 * time.Minute),
@@ -141,6 +142,9 @@ type replicaConfig struct {
 	CaseSensitive    *bool   `toml:"case-sensitive" json:"case-sensitive,omitempty"`
 	ForceReplicate   *bool   `toml:"force-replicate" json:"force-replicate,omitempty"`
 	CheckGCSafePoint *bool   `toml:"check-gc-safe-point" json:"check-gc-safe-point,omitempty"`
+	// EnableRedoIOCheck controls whether consistency storage validation should
+	// perform an I/O accessibility check. This field is internal only.
+	EnableRedoIOCheck *bool `toml:"-" json:"-"`
 	// EnableSyncPoint is only available when the downstream is a Database.
 	EnableSyncPoint    *bool `toml:"enable-sync-point" json:"enable-sync-point,omitempty"`
 	EnableTableMonitor *bool `toml:"enable-table-monitor" json:"enable-table-monitor"`
@@ -233,6 +237,9 @@ func (c *ReplicaConfig) Clone() *ReplicaConfig {
 		log.Panic("failed to unmarshal replica config",
 			zap.Error(cerror.WrapError(cerror.ErrDecodeFailed, err)))
 	}
+	if c.EnableRedoIOCheck != nil {
+		clone.EnableRedoIOCheck = util.AddressOf(*c.EnableRedoIOCheck)
+	}
 	return clone
 }
 
@@ -250,6 +257,11 @@ func (c *replicaConfig) fillFromV1(v1 *outdated.ReplicaConfigV1) {
 
 // ValidateAndAdjust verifies and adjusts the replica configuration.
 func (c *ReplicaConfig) ValidateAndAdjust(sinkURI *url.URL) error { // check sink uri
+	enableRedoIOCheck := true
+	if c.EnableRedoIOCheck != nil {
+		enableRedoIOCheck = *c.EnableRedoIOCheck
+	}
+
 	if c.Sink != nil {
 		err := c.Sink.validateAndAdjust(sinkURI)
 		if err != nil {
@@ -258,7 +270,7 @@ func (c *ReplicaConfig) ValidateAndAdjust(sinkURI *url.URL) error { // check sin
 	}
 
 	if c.Consistent != nil {
-		err := c.Consistent.ValidateAndAdjust()
+		err := c.Consistent.validateAndAdjust(enableRedoIOCheck)
 		if err != nil {
 			return err
 		}
