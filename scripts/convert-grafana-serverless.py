@@ -19,7 +19,7 @@ import sys
 
 
 REMOVED_LABELS = {"k8s_cluster", "sharedpool_id", "tidb_cluster"}
-SERVERLESS_DASHBOARD_TITLE = "TiDB-Serverless-test-TiCDC-New-Arch"
+SERVERLESS_DASHBOARD_TITLE = "TiDB-Serverless-TiCDC-New-Arch"
 CONTROL_PLANE_DATASOURCE_INPUT = "DS_TEST-CLUSTER-VARIABLES"
 CONTROL_PLANE_DATASOURCE = "${" + CONTROL_PLANE_DATASOURCE_INPUT + "}"
 CONTROL_PLANE_QUERY = 'label_values({application_id="devtier-infra"}, control_plane_info)'
