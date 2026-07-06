@@ -4200,7 +4200,7 @@
           "targets": [
             {
               "exemplar": true,
-              "expr": "max(ticdc_gc_min_service_gc_safepoint{})",
+              "expr": "max(ticdc_gc_min_service_gc_safepoint)",
               "interval": "",
               "legendFormat": "gc time",
               "queryType": "randomWalk",
@@ -4208,7 +4208,7 @@
             },
             {
               "exemplar": true,
-              "expr": "max(ticdc_gc_cdc_gc_safepoint{})",
+              "expr": "max(ticdc_gc_cdc_gc_safepoint)",
               "hide": false,
               "interval": "",
               "legendFormat": "cdc service safepoint",
@@ -27092,7 +27092,7 @@
           "value": "$__all"
         },
         "datasource": "${DS_TEST-CLUSTER}",
-        "definition": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", sharedpool_id=\"$tidb_cluster\"}, changefeed)",
+        "definition": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", sharedpool_id=\"$tidb_cluster\", keyspace_name=\"$keyspace_name\"}, changefeed)",
         "description": null,
         "error": null,
         "hide": 0,
@@ -27102,7 +27102,7 @@
         "name": "changefeed",
         "options": [],
         "query": {
-          "query": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", sharedpool_id=\"$tidb_cluster\"}, changefeed)",
+          "query": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", sharedpool_id=\"$tidb_cluster\", keyspace_name=\"$keyspace_name\"}, changefeed)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

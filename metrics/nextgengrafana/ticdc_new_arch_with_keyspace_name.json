@@ -11284,7 +11284,7 @@
           "value": "$__all"
         },
         "datasource": "${DS_TEST-CLUSTER}",
-        "definition": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", tidb_cluster=\"$tidb_cluster\"}, changefeed)",
+        "definition": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", tidb_cluster=\"$tidb_cluster\", keyspace_name=\"$keyspace_name\"}, changefeed)",
         "description": null,
         "error": null,
         "hide": 0,
@@ -11294,7 +11294,7 @@
         "name": "changefeed",
         "options": [],
         "query": {
-          "query": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", tidb_cluster=\"$tidb_cluster\"}, changefeed)",
+          "query": "label_values(ticdc_owner_checkpoint_ts_lag{k8s_cluster=\"$k8s_cluster\", tidb_cluster=\"$tidb_cluster\", keyspace_name=\"$keyspace_name\"}, changefeed)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

@@ -188,6 +188,39 @@ func TestResendAction(t *testing.T) {
 	require.Equal(t, resp.DispatcherStatuses[0].Action.CommitTs, uint64(10))
 }
 
+func TestForwardBarrierEventDoesNotSkipSyncPointWrite(t *testing.T) {
+	cfID := common.NewChangeFeedIDWithName("test", common.DefaultKeyspaceName)
+	dispatcherID := common.NewDispatcherID()
+	tableSpan := common.TableIDToComparableSpan(common.DefaultKeyspaceID, 1)
+	replication := replica.NewWorkingSpanReplication(
+		cfID,
+		dispatcherID,
+		1,
+		&heartbeatpb.TableSpan{
+			TableID:    tableSpan.TableID,
+			StartKey:   tableSpan.StartKey,
+			EndKey:     tableSpan.EndKey,
+			KeyspaceID: tableSpan.KeyspaceID,
+		},
+		&heartbeatpb.TableSpanStatus{
+			ID:              dispatcherID.ToPB(),
+			CheckpointTs:    11,
+			ComponentStatus: heartbeatpb.ComponentState_Working,
+		},
+		"node1",
+		false,
+	)
+
+	ddlEvent := &BarrierEvent{commitTs: 10}
+	require.True(t, forwardBarrierEvent(replication, ddlEvent))
+
+	syncPointEvent := &BarrierEvent{commitTs: 10, isSyncPoint: true}
+	require.False(t, forwardBarrierEvent(replication, syncPointEvent))
+
+	replication.UpdateBlockState(heartbeatpb.State{BlockTs: 11})
+	require.True(t, forwardBarrierEvent(replication, syncPointEvent))
+}
+
 func TestSendPassActionTypeDBIncludesWriterNode(t *testing.T) {
 	testutil.SetUpTestServices()
 	nodeManager := appcontext.GetService[*watcher.NodeManager](watcher.NodeManagerName)

@@ -560,7 +560,7 @@ func (be *BarrierEvent) checkBlockedDispatchers() {
 // replication is strictly beyond the barrier, or when ordering guarantees it (replication is in a
 // syncpoint barrier at the same ts while `event` is a DDL barrier).
 func forwardBarrierEvent(replication *replica.SpanReplication, event *BarrierEvent) bool {
-	if replication.GetStatus().CheckpointTs > event.commitTs {
+	if !event.isSyncPoint && replication.GetStatus().CheckpointTs > event.commitTs {
 		return true
 	}
 
