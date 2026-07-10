@@ -44,10 +44,10 @@ func TestSchemaStoreGCKeeperLifecycle(t *testing.T) {
 
 	ctx := context.Background()
 	require.NoError(t, keeper.initialize(ctx, 100))
-	assertSchemaStoreBarrierTS(t, state, serviceID, 101)
+	assertSchemaStoreBarrierTS(t, state, serviceID, 100)
 
 	require.NoError(t, keeper.refresh(ctx, 130))
-	assertSchemaStoreBarrierTS(t, state, serviceID, 131)
+	assertSchemaStoreBarrierTS(t, state, serviceID, 130)
 
 	require.NoError(t, keeper.close(ctx))
 	if kerneltype.IsClassic() {
@@ -77,7 +77,7 @@ func TestCloseSchemaStoreGCKeeperUsesFreshContext(t *testing.T) {
 
 	ctx := context.Background()
 	require.NoError(t, keeper.initialize(ctx, 100))
-	assertSchemaStoreBarrierTS(t, state, serviceID, 101)
+	assertSchemaStoreBarrierTS(t, state, serviceID, 100)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()

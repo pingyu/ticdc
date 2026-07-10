@@ -63,8 +63,8 @@ func (k *schemaStoreGCKeeper) refresh(ctx context.Context, resolvedTs uint64) er
 }
 
 func (k *schemaStoreGCKeeper) refreshWithTs(ctx context.Context, ts uint64) error {
-	// EnsureChangefeedStartTsSafety is defined in terms of changefeed startTs: it
-	// keeps "startTs + 1" readable, not startTs itself.
+	// EnsureChangefeedStartTsSafety is defined in terms of changefeed startTs, so
+	// the schema store protects the exact checkpoint TS it still depends on.
 	return gc.EnsureChangefeedStartTsSafety(
 		ctx,
 		k.pdCli,
