@@ -16,7 +16,6 @@ package schemastore
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -65,16 +64,7 @@ func (k *schemaStoreGCKeeper) refresh(ctx context.Context, resolvedTs uint64) er
 
 func (k *schemaStoreGCKeeper) refreshWithTs(ctx context.Context, ts uint64) error {
 	// EnsureChangefeedStartTsSafety is defined in terms of changefeed startTs: it
-	// keeps "startTs - 1" readable, not startTs itself.
-	//
-	// Schema store needs the snapshot at ts to stay readable, and it pulls
-	// incremental DDLs starting from ts. So ts itself must not be
-	// collected yet. To express that requirement with the helper's startTs
-	// convention, schema store passes ts + 1 here.
-	startTs := ts
-	if startTs != math.MaxUint64 {
-		startTs++
-	}
+	// keeps "startTs + 1" readable, not startTs itself.
 	return gc.EnsureChangefeedStartTsSafety(
 		ctx,
 		k.pdCli,
@@ -82,7 +72,7 @@ func (k *schemaStoreGCKeeper) refreshWithTs(ctx context.Context, ts uint64) erro
 		k.keyspaceMeta.ID,
 		k.gcServiceIDParts,
 		defaultGcServiceTTL,
-		startTs,
+		ts,
 	)
 }
 

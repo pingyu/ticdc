@@ -16,6 +16,7 @@ package schemastore
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -508,7 +509,11 @@ func (s *schemaStore) RegisterKeyspace(
 		return err
 	}
 
-	storage, err := newPersistentStorage(storeCtx, s.root, keyspaceMeta.ID, s.pdCli, kvStorage, gcSafePoint)
+	startTs := gcSafePoint
+	if startTs != math.MaxUint64 {
+		startTs++
+	}
+	storage, err := newPersistentStorage(storeCtx, s.root, keyspaceMeta.ID, s.pdCli, kvStorage, startTs)
 	if err != nil {
 		cancel()
 		if closeErr := closeSchemaStoreGCKeeper(keyspaceMeta.ID, gcKeeper); closeErr != nil {

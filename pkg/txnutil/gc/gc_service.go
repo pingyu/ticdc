@@ -83,7 +83,7 @@ func ensureChangefeedStartTsSafetyNextGen(ctx context.Context, pdCli pd.Client, 
 	// When legacy safepoint is enabled in next-gen, the logic should follow
 	// the classic architecture.
 	if useLegacySafePointInNextGen() {
-		if startTs > 0 && startTs < minServiceGCTs+1 {
+		if startTs > 0 && startTs < minServiceGCTs {
 			return errors.ErrStartTsBeforeGC.GenWithStackByArgs(startTs, minServiceGCTs)
 		}
 	}
