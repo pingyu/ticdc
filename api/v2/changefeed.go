@@ -183,7 +183,7 @@ func (h *OpenAPIV2) CreateChangefeed(c *gin.Context) {
 		ctx,
 		h.server.GetPdClient(),
 		createGcServiceID,
-		keyspaceMeta.Id,
+		keyspaceMeta.GetId(),
 		changefeedID,
 		ensureTTL, cfg.StartTs); err != nil {
 		if !errors.ErrStartTsBeforeGC.Equal(err) {
@@ -204,7 +204,7 @@ func (h *OpenAPIV2) CreateChangefeed(c *gin.Context) {
 		undoErr := gc.UndoEnsureChangefeedStartTsSafety(
 			ctx,
 			pdClient,
-			keyspaceMeta.Id,
+			keyspaceMeta.GetId(),
 			createGcServiceID,
 			changefeedID,
 		)
@@ -232,7 +232,7 @@ func (h *OpenAPIV2) CreateChangefeed(c *gin.Context) {
 	// We create a new context here.
 	schemaCxt := context.Background()
 	if err = schemaStore.RegisterKeyspace(schemaCxt, common.KeyspaceMeta{
-		ID:   keyspaceMeta.Id,
+		ID:   keyspaceMeta.GetId(),
 		Name: keyspaceMeta.Name,
 	}); err != nil {
 		_ = c.Error(err)
@@ -268,7 +268,7 @@ func (h *OpenAPIV2) CreateChangefeed(c *gin.Context) {
 		Config:         replicaCfg,
 		State:          config.StateNormal,
 		CreatorVersion: version.ReleaseVersion,
-		KeyspaceID:     keyspaceMeta.Id,
+		KeyspaceID:     keyspaceMeta.GetId(),
 	}
 
 	// verify sinkURI
@@ -765,7 +765,7 @@ func (h *OpenAPIV2) ResumeChangefeed(c *gin.Context) {
 		ctx,
 		h.server.GetPdClient(),
 		resumeGcServiceID,
-		keyspaceMeta.Id,
+		keyspaceMeta.GetId(),
 		cfInfo.ChangefeedID,
 		newCheckpointTs); err != nil {
 		_ = c.Error(err)
@@ -779,7 +779,7 @@ func (h *OpenAPIV2) ResumeChangefeed(c *gin.Context) {
 		undoErr := gc.UndoEnsureChangefeedStartTsSafety(
 			ctx,
 			h.server.GetPdClient(),
-			keyspaceMeta.Id,
+			keyspaceMeta.GetId(),
 			resumeGcServiceID,
 			cfInfo.ChangefeedID,
 		)
@@ -1679,25 +1679,8 @@ func getVerifiedTables(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if !config.IsMQScheme(scheme) {
-		return ineligibleTables, eligibleTables, allTables, nil
-	}
 
-	eventRouter, err := eventrouter.NewEventRouter(replicaConfig.Sink, topic, config.IsPulsarScheme(scheme), protocol == config.ProtocolAvro)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	err = eventRouter.VerifyTables(tableInfos)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	selectors, err := columnselector.New(replicaConfig.Sink)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	err = selectors.VerifyTables(tableInfos, eventRouter)
-	if err != nil {
+	if err := verifyTablesForSink(replicaConfig, scheme, topic, protocol, tableInfos); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -1706,6 +1689,41 @@ func getVerifiedTables(
 	}
 
 	return ineligibleTables, eligibleTables, allTables, nil
+}
+
+func verifyTablesForSink(
+	replicaConfig *config.ReplicaConfig,
+	scheme string,
+	topic string,
+	protocol config.Protocol,
+	tableInfos []*common.TableInfo,
+) error {
+	if config.IsStorageScheme(scheme) {
+		selectors, err := columnselector.New(replicaConfig.Sink)
+		if err != nil {
+			return err
+		}
+		return selectors.VerifyTables(tableInfos, nil)
+	}
+
+	if !config.IsMQScheme(scheme) {
+		return nil
+	}
+
+	isAvroLike := protocol == config.ProtocolAvro || protocol == config.ProtocolDebeziumAvro
+	eventRouter, err := eventrouter.NewEventRouter(replicaConfig.Sink, topic, config.IsPulsarScheme(scheme), isAvroLike)
+	if err != nil {
+		return err
+	}
+	if err = eventRouter.VerifyTables(tableInfos); err != nil {
+		return err
+	}
+
+	selectors, err := columnselector.New(replicaConfig.Sink)
+	if err != nil {
+		return err
+	}
+	return selectors.VerifyTables(tableInfos, eventRouter)
 }
 
 func GetKeyspaceValueWithDefault(c *gin.Context) string {

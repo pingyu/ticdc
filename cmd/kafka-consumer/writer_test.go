@@ -18,9 +18,11 @@ import (
 	"testing"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/golang/mock/gomock"
 	"github.com/pingcap/ticdc/cmd/util"
 	"github.com/pingcap/ticdc/downstreamadapter/sink"
 	"github.com/pingcap/ticdc/downstreamadapter/sink/eventrouter"
+	"github.com/pingcap/ticdc/downstreamadapter/sink/mock"
 	"github.com/pingcap/ticdc/pkg/common"
 	commonEvent "github.com/pingcap/ticdc/pkg/common/event"
 	"github.com/pingcap/ticdc/pkg/config"
@@ -284,59 +286,181 @@ func TestWriterWrite_handlesOutOfOrderDDLsByCommitTs(t *testing.T) {
 	require.Equal(t, "CREATE TABLE `common_1`.`a` (`a` BIGINT PRIMARY KEY,`b` INT)", w.ddlList[0].Query)
 }
 
-func TestAppendRow2Group_DoesNotDropCommitTsFallbackBeforeApplied(t *testing.T) {
-	// Scenario:
-	// 1) TiCDC writes DML messages to Kafka in commitTs order.
-	// 2) Under network partition / changefeed restart, TiCDC may replay older commitTs,
-	//    which will be appended to Kafka at a larger offset (commitTs appears to go backwards).
-	//
-	// The kafka-consumer must not drop these "fallback commitTs" events unless they have
-	// already been flushed to downstream (AppliedWatermark), otherwise the replay cannot
-	// heal the missing window.
+func TestWriterWrite_sortsOutOfOrderDMLByWatermark(t *testing.T) {
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	s := mock.NewMockSink(ctrl)
+	flushedCommitTs := make([]uint64, 0)
+	s.EXPECT().AddDMLEvent(gomock.Any()).Do(func(event *commonEvent.DMLEvent) {
+		flushedCommitTs = append(flushedCommitTs, event.GetCommitTs())
+		event.PostFlush()
+	}).Times(2)
+
 	replicaCfg := config.GetDefaultReplicaConfig()
 	eventRouter, err := eventrouter.NewEventRouter(replicaCfg.Sink, "test-topic", false, false)
 	require.NoError(t, err)
 
+	p := &partitionProgress{
+		partition:   0,
+		eventsGroup: make(map[int64]*util.EventsGroup),
+		watermark:   0,
+	}
 	w := &writer{
-		progresses:             []*partitionProgress{{partition: 0, eventsGroup: make(map[int64]*util.EventsGroup)}},
-		eventRouter:            eventRouter,
-		protocol:               config.ProtocolCanalJSON,
-		partitionTableAccessor: codecCommon.NewPartitionTableAccessor(),
+		progresses:  []*partitionProgress{p},
+		mysqlSink:   s,
+		eventRouter: eventRouter,
+		protocol:    config.ProtocolOpen,
 	}
 
-	newDMLEvent := func(tableID int64, commitTs uint64) *commonEvent.DMLEvent {
+	w.appendMessage2Group(newDMLMessageForWriterTest(20), p, kafka.Offset(1))
+	w.appendMessage2Group(newDMLMessageForWriterTest(10), p, kafka.Offset(2))
+	w.appendMessage2Group(newDMLMessageForWriterTest(20), p, kafka.Offset(3))
+
+	p.watermark = 20
+	require.True(t, w.Write(ctx, codecCommon.MessageTypeResolved))
+	require.Equal(t, []uint64{10, 20}, flushedCommitTs)
+}
+
+func TestWriteMessageIgnoresFallbackDMLBelowGlobalWatermark(t *testing.T) {
+	ctx := context.Background()
+	ctrl := gomock.NewController(t)
+	s := mock.NewMockSink(ctrl)
+	s.EXPECT().AddDMLEvent(gomock.Any()).Times(0)
+
+	progress := &partitionProgress{
+		partition:   0,
+		eventsGroup: make(map[int64]*util.EventsGroup),
+		watermark:   20,
+		decoder:     &singleDMLDecoder{message: newDMLMessageForWriterTest(10)},
+	}
+	w := &writer{
+		progresses:      []*partitionProgress{progress},
+		mysqlSink:       s,
+		protocol:        config.ProtocolOpen,
+		maxBatchSize:    64,
+		maxMessageBytes: 1,
+	}
+
+	needCommit := w.WriteMessage(ctx, &kafka.Message{
+		TopicPartition: kafka.TopicPartition{Partition: 0, Offset: kafka.Offset(10)},
+	})
+
+	require.False(t, needCommit)
+	require.Nil(t, progress.eventsGroup[1])
+}
+
+func TestAppendMessageKeepsFallbackDMLAboveGlobalWatermark(t *testing.T) {
+	replicaCfg := config.GetDefaultReplicaConfig()
+	eventRouter, err := eventrouter.NewEventRouter(replicaCfg.Sink, "test-topic", false, false)
+	require.NoError(t, err)
+
+	progress := &partitionProgress{
+		partition:   0,
+		eventsGroup: make(map[int64]*util.EventsGroup),
+		watermark:   20,
+	}
+	w := &writer{
+		progresses: []*partitionProgress{
+			progress,
+			{partition: 1, watermark: 5},
+		},
+		eventRouter: eventRouter,
+		protocol:    config.ProtocolOpen,
+	}
+
+	w.appendMessage2Group(newDMLMessageForWriterTest(10), progress, kafka.Offset(10))
+
+	require.NotNil(t, progress.eventsGroup[1])
+	resolved := progress.eventsGroup[1].ResolveInto(20, nil)
+	require.Len(t, resolved, 1)
+	require.Equal(t, uint64(10), resolved[0].GetCommitTs())
+}
+
+func TestAppendRow2GroupKeepsDebeziumPartitionTableFallback(t *testing.T) {
+	for _, protocol := range []config.Protocol{
+		config.ProtocolDebezium,
+		config.ProtocolDebeziumAvro,
+	} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			replicaCfg := config.GetDefaultReplicaConfig()
+			eventRouter, err := eventrouter.NewEventRouter(replicaCfg.Sink, "test-topic", false, false)
+			require.NoError(t, err)
+
+			w := &writer{
+				progresses:             []*partitionProgress{{partition: 0, eventsGroup: make(map[int64]*util.EventsGroup)}},
+				eventRouter:            eventRouter,
+				protocol:               protocol,
+				partitionTableAccessor: codecCommon.NewPartitionTableAccessor(),
+			}
+
+			w.partitionTableAccessor.Add("target", "src")
+			ddl := &commonEvent.DDLEvent{
+				Query:      "CREATE TABLE `target`.`dst` LIKE `target`.`src`",
+				SchemaName: "target",
+				TableName:  "dst",
+				Type:       byte(timodel.ActionCreateTable),
+			}
+			w.onDDL(ddl)
+			require.True(t, w.partitionTableAccessor.IsPartitionTable("target", "dst"))
+
+			newDMLEvent := func(commitTs uint64) *commonEvent.DMLEvent {
+				return &commonEvent.DMLEvent{
+					PhysicalTableID: 1,
+					CommitTs:        commitTs,
+					RowTypes:        []common.RowType{common.RowTypeUpdate},
+					Rows:            chunk.NewChunkWithCapacity(nil, 0),
+					TableInfo: &common.TableInfo{
+						TableName: common.TableName{Schema: "target", Table: "dst"},
+					},
+				}
+			}
+
+			progress := w.progresses[0]
+			w.appendMessage2Group(codecCommon.NewDMLMessageFromEvent(newDMLEvent(200)), progress, kafka.Offset(10))
+			w.appendMessage2Group(codecCommon.NewDMLMessageFromEvent(newDMLEvent(100)), progress, kafka.Offset(11))
+
+			resolved := progress.eventsGroup[1].ResolveInto(150, nil)
+			require.Len(t, resolved, 1)
+			require.Equal(t, uint64(100), resolved[0].GetCommitTs())
+		})
+	}
+}
+
+func newDMLMessageForWriterTest(commitTs uint64) *codecCommon.DMLMessage {
+	return codecCommon.NewDMLMessage(1, "test", "t", commitTs, common.RowTypeUpdate, func() *commonEvent.DMLEvent {
 		return &commonEvent.DMLEvent{
-			PhysicalTableID: tableID,
+			PhysicalTableID: 1,
 			CommitTs:        commitTs,
 			RowTypes:        []common.RowType{common.RowTypeUpdate},
 			Rows:            chunk.NewChunkWithCapacity(nil, 0),
 			TableInfo: &common.TableInfo{
-				TableName: common.TableName{Schema: "test", Table: "t"},
+				TableName: common.TableName{Schema: "test", Table: "t", TableID: 1},
 			},
 		}
-	}
+	})
+}
 
-	progress := w.progresses[0]
+type singleDMLDecoder struct {
+	message  *codecCommon.DMLMessage
+	consumed bool
+}
 
-	// Step 1: observe a larger commitTs first (e.g. produced before restart).
-	w.appendRow2Group(newDMLEvent(1, 200), progress, kafka.Offset(10))
+func (d *singleDMLDecoder) AddKeyValue(_, _ []byte) {
+}
 
-	// Step 2: observe a smaller commitTs later (e.g. replayed after restart).
-	w.appendRow2Group(newDMLEvent(1, 100), progress, kafka.Offset(11))
+func (d *singleDMLDecoder) HasNext() (codecCommon.MessageType, bool) {
+	return codecCommon.MessageTypeRow, !d.consumed
+}
 
-	group := progress.eventsGroup[1]
-	require.NotNil(t, group)
+func (d *singleDMLDecoder) NextResolvedEvent() uint64 {
+	return 0
+}
 
-	resolvedEvents := make([]*commonEvent.DMLEvent, 0)
-	// Expect: commitTs=100 is still kept and can be resolved.
-	resolved := group.ResolveInto(150, nil)
-	require.Len(t, resolved, 1)
-	require.Equal(t, uint64(100), resolved[0].CommitTs)
+func (d *singleDMLDecoder) NextDMLMessage() *codecCommon.DMLMessage {
+	d.consumed = true
+	return d.message
+}
 
-	// Step 3: once downstream has flushed beyond commitTs=100, the replay is safe to ignore.
-	resolvedEvents = make([]*commonEvent.DMLEvent, 0)
-	group.AppliedWatermark = 200
-	w.appendRow2Group(newDMLEvent(1, 100), progress, kafka.Offset(12))
-	resolved = group.ResolveInto(150, resolvedEvents)
-	require.Empty(t, resolved)
+func (d *singleDMLDecoder) NextDDLEvent() *commonEvent.DDLEvent {
+	return nil
 }
